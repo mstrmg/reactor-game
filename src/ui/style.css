@@ -49,7 +49,7 @@ kbd { font: 700 0.85em/1 var(--f-type); padding: 0.2em 0.45em; border: 1px solid
 }
 .title__glass { position: absolute; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(0deg, rgba(157,232,178,0.025) 0 1px, transparent 1px 3px); }
-.title__cover { position: relative; display: grid; gap: 18px; align-self: center; }
+.title__cover { min-width: 0; position: relative; display: grid; gap: 18px; align-self: center; }
 
 /* Engraved lamacoid nameplate: the hardware label on every control board. */
 .cover__plate {
@@ -67,7 +67,7 @@ kbd { font: 700 0.85em/1 var(--f-type); padding: 0.2em 0.45em; border: 1px solid
 .cover__plate::before { left: 12px; } .cover__plate::after { right: 12px; }
 .cover__unit { font: 500 18px/1 var(--f-plate); letter-spacing: 0.04em; color: #a8b2ad; }
 .cover__name {
-  margin: 10px 0 14px; font: 800 clamp(72px, 11vw, 168px)/0.82 var(--f-plate);
+  margin: 10px 0 14px; font: 800 clamp(56px, 7.4vw, 150px)/0.82 var(--f-plate);
   letter-spacing: 0.01em; color: var(--white-tile);
   text-shadow: 0 -1px 0 rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.12);
 }
