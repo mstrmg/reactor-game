@@ -534,7 +534,8 @@ export class ReactorSim implements ReactorSimApi {
   }
   trefF() { return 557 + 27.7 * clamp(this.turb.wt / K.W_STEAM_RATED, 0, 1); }
   mtcIntegral() {
-    const tm = cToF(0.5 * (this.T[LP] + this.T[CORE]));
+    // liquid moderator temperature only (steam is accounted for by the void coefficient)
+    const tm = clamp(cToF(0.5 * (this.T[LP] + this.T[CORE])), 32, 700);
     return K.MTC_SCALE_F * (Math.exp((tm - K.T_REF_F) / K.MTC_SCALE_F) - 1);
   }
   powerAvailable() { return this.offsite || this.dgReady(); }
@@ -553,13 +554,34 @@ export class ReactorSim implements ReactorSimApi {
   addMass(i: number, dm: number, hin: number, boron: number, hbar: number) {
     if (dm === 0) return;
     const mi = this.ML * VFRAC[i];
+    const h0 = this.h[i];
+    // energy correction for the uniform-density mass redistribution; it is applied locally but
+    // bounded so the node never leaves the range spanned by its own and the incoming enthalpy
+    // (anything beyond that is spread over the whole loop, conserving energy).
+    let dE: number, lo: number, hi: number;
     if (dm > 0) {
-      this.h[i] += (dm * (hin - hbar)) / mi;
+      dE = dm * (hin - hbar);
+      lo = Math.min(h0, hin, hbar); hi = Math.max(h0, hin, hbar);
       this.bor[i] += (dm * (boron - this.bor[i])) / (mi + dm);
     } else {
-      this.h[i] += (-dm * (hbar - this.h[i])) / mi; // removal at node enthalpy, see README
+      dE = -dm * (hbar - h0); // removal at node enthalpy, see README
+      lo = Math.min(h0, hbar); hi = Math.max(h0, hbar);
     }
+    this.boundedDE(i, dE, lo, hi);
     this.ML += dm;
+  }
+  /** apply energy dE (kJ) to node i, limiting its enthalpy to [lo,hi]; the remainder is spread evenly */
+  boundedDE(i: number, dE: number, lo: number, hi: number) {
+    const mi = this.ML * VFRAC[i];
+    const h0 = this.h[i];
+    const hn = clamp(h0 + dE / mi, Math.min(lo, h0), Math.max(hi, h0));
+    const rem = dE - (hn - h0) * mi;
+    this.h[i] = hn;
+    if (rem !== 0) { const d = rem / this.ML; for (let k = 0; k < NN; k++) this.h[k] += d; }
+    for (let k = 0; k < NN; k++) if (this.h[k] < 42) this.h[k] = 42;
+  }
+  energyCorrection(i: number, dE: number, hs: number, hbar: number) {
+    this.boundedDE(i, dE, Math.min(hs, hbar), Math.max(hs, hbar));
   }
 
   // =================================================================== reactivity
@@ -577,7 +599,7 @@ export class ReactorSim implements ReactorSimApi {
     r.boron = K.BORON_WORTH * B;
     const F = this.mtcIntegral();
     r.moderator = (K.MTC_A0 + K.MTC_A1 * B) * F;
-    const tfK = K.REGION_SHARE[0] * this.Tf[0] + K.REGION_SHARE[1] * this.Tf[1] + 273.15;
+    const tfK = Math.min(3200, K.REGION_SHARE[0] * this.Tf[0] + K.REGION_SHARE[1] * this.Tf[1]) + 273.15;
     r.doppler = -K.DOPPLER_K * (Math.sqrt(tfK) - Math.sqrt(fToC(K.T_REF_F) + 273.15));
     // core void fraction (homogeneous, slip 1.5)
     const x = this.X[CORE];
@@ -991,7 +1013,10 @@ export class ReactorSim implements ReactorSimApi {
         const qwet = Math.max(qfc, qnb);
         const rad = 3.97e-11 * ((Tc + 273.15) ** 4 - (Ts + 273.15) ** 4);
         const qfilm = 0.6 * (Tc - Ts) + rad;
-        const qdry = 0.03 * (Tc - Ts) + rad;
+        // uncovered: convection to (possibly superheated) steam; rod-to-rod radiation is mostly
+        // internal to the bundle, only a small part reaches the shroud / cooler structures
+        const Tst = Math.max(Ts, Tcool);
+        const qdry = 0.012 * (Tc - Tst) + 0.12 * 3.97e-11 * ((Tc + 273.15) ** 4 - (Tst + 273.15) ** 4);
         return (1 - u) * ((1 - fd) * qwet + fd * qfilm) + u * qdry;
       };
       const Tc0 = this.Tc[r];
@@ -1020,8 +1045,9 @@ export class ReactorSim implements ReactorSimApi {
       }
       const rate = (tf - this.Tf[r]) / dt;
       this.tfRate[r] += (rate - this.tfRate[r]) * Math.min(1, dt / 0.5);
-      this.Tf[r] = tf;
-      this.Tc[r] = tc;
+      // relocated corium is bounded by heat loss to the lower head / debris bed
+      this.Tf[r] = Math.min(tf, 3300);
+      this.Tc[r] = Math.min(tc, 3300);
       qcool += A * (q0 + dq * (tc - Tc0));
       qox += Qox;
     }
@@ -1422,7 +1448,7 @@ export class ReactorSim implements ReactorSimApi {
     else this.bor[sl] += (-dm * (pz.B - this.bor[sl])) / (this.ML * VFRAC[sl]);
     pz.M += dm; pz.U += dm * hs;
     // loops: remove/add at surge enthalpy with the uniform-distribution energy correction
-    this.h[sl] += (-dm * (hs - hbar)) / (this.ML * VFRAC[sl]);
+    this.energyCorrection(sl, -dm * (hs - hbar), hs, hbar);
     this.ML -= dm;
     this.surgeKgs = dm / dt;
     P = containerPressure(pz.M, pz.U, V_PZR, P, out);
@@ -1690,7 +1716,7 @@ export class ReactorSim implements ReactorSimApi {
       const tc = this.Tc[r];
       let f = Math.max(this.fail[r], 0.95 * smooth(tc, K.T_CLAD_FAIL_START, K.T_CLAD_FAIL_FULL));
       const d = r === 1 ? this.dnbr : this.dnbrBulk;
-      if (d < 1) f += (1 - d) * 0.01 * dt;
+      if (d < 1 && tc > 650) f += (1 - d) * 0.01 * dt; // sustained film boiling at high clad temperature
       f = Math.max(f, Math.min(1, this.ox[r] / 0.17 > 0.1 ? this.ox[r] / 0.17 : 0));
       f = Math.max(f, this.melt[r]);
       this.fail[r] = clamp(f, 0, 1);

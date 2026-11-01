@@ -48,7 +48,7 @@ export function evaluateRps(sim: ReactorSim, dt: number) {
   pm.P11 = pm.P11 ? Ppsig > S.P11_PSIG - 15 : Ppsig >= S.P11_PSIG;
 
   // ---- OTΔT / OPΔT setpoints (°C internally for comparison with loop ΔT)
-  m.prSlow += (pr - m.prSlow) * Math.min(1, dt / 2);
+  m.prSlow += (prTrue - m.prSlow) * Math.min(1, dt / 2);
   let otMargin = Infinity, opMargin = Infinity;
   let otTrip = false, opTrip = false;
   let otSp = 99, opSp = 99;
@@ -76,9 +76,9 @@ export function evaluateRps(sim: ReactorSim, dt: number) {
   // ---- trip signals
   const sig: TripId[] = [];
   if (sim.manualTripPending) { sig.push('MANUAL'); sim.manualTripPending = false; }
-  if (pr >= S.PR_HI) sig.push('PR_HIGH_FLUX_HI');
-  if (!pm.P10 && pr >= S.PR_LO) sig.push('PR_HIGH_FLUX_LO');
-  if (pr - m.prSlow > S.PR_RATE) sig.push('PR_POS_RATE');
+  if (prTrue >= S.PR_HI) sig.push('PR_HIGH_FLUX_HI');
+  if (!pm.P10 && prTrue >= S.PR_LO) sig.push('PR_HIGH_FLUX_LO');
+  if (prTrue - m.prSlow > S.PR_RATE) sig.push('PR_POS_RATE');
   if (!pm.P10 && ir >= S.IR_HI_AMPS) sig.push('IR_HIGH_FLUX');
   if (!pm.P6 && !pm.P10 && sr >= S.SR_HI_CPS) sig.push('SR_HIGH_FLUX');
   const surDpm = (sim.sur * 60) / Math.LN10;
