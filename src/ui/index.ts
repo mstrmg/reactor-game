@@ -9,6 +9,7 @@ import { audioPrefs } from '../audio/prefs';
 import { CATASTROPHE_TITLE, SCENARIOS, TRIP_SHORT, faultLabel, tripLabel } from './labels';
 import { KEYS_UI, KEYS_WORLD, PRIMER } from './content';
 import { RUNNING_CHECKS, STARTUP, type ProcStep } from './procedures';
+import { createRemote } from './remote';
 import { alarmHelp, faultHelp, relatedValues, tripAdvice } from './alarmHelp';
 
 export interface UIApi {
@@ -444,6 +445,19 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   oR.oRestart.addEventListener('click', () => startGame(scenario, randomFaults));
   oR.oTitle.addEventListener('click', () => showTitle());
 
+  // ================= PHONE / REMOTE VIEW =================
+  const remote = createRemote(root, sim, {
+    canCall: () => mode === 'playing' && !overAt && !(sim.controls?.paused ?? true),
+    helpOpen: () => helpIdx >= 0,
+    expectLock: () => {
+      awaitLockSince = performance.now();
+    },
+    pauseWithNote: (n) => {
+      if (!locked) doPause(n);
+    },
+    clock: (t) => fmtClock(t),
+  });
+
   // ================= behaviour =================
   function keysTable(): string {
     const rows = (k: [string, string][]) =>
@@ -455,6 +469,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   function startGame(sc: ScenarioId, rf: boolean) {
     scenario = sc;
     randomFaults = rf;
+    remote.reset();
     mode = 'playing';
     log.length = 0;
     latched.clear();
@@ -481,6 +496,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   }
 
   function showTitle() {
+    remote.reset();
     mode = 'title';
     if (sim.controls) sim.controls.paused = true;
     title.hidden = false;
@@ -675,7 +691,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       }
     } else if (mode === 'playing' && !overShown) {
       hR.tip.hidden = true;
-      doPause();
+      if (!remote.active()) doPause();
     }
   }
 
@@ -689,6 +705,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   }
 
   function showReport() {
+    remote.reset();
     overShown = true;
     mode = 'over';
     const s = st();
@@ -732,6 +749,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       }
       return;
     }
+    if (mode === 'playing' && remote.handleKey(ev)) return;
     switch (ev.code) {
       case 'Tab':
         ev.preventDefault();
@@ -989,10 +1007,11 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     update(dt: number) {
       const now = performance.now();
       if (mode === 'title') return;
+      remote.update(dt);
 
       // pointer lock watchdog (browsers refuse re-lock for ~1 s after Esc)
       if (mode === 'playing' && awaitLockSince && now - awaitLockSince > 1500) {
-        if (!document.pointerLockElement && !locked) {
+        if (!document.pointerLockElement && !locked && !remote.active()) {
           doPause('Click Resume to take the controls.');
         }
         awaitLockSince = 0;
