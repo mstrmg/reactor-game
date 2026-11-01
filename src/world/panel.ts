@@ -922,7 +922,7 @@ export class PanelKit {
       kind: 'button',
       detail: (s) => {
         const l = def.lamp ? (safeBool(def.lamp, s) ? 'indicating ON   ' : 'indicating off   ') : '';
-        return `${l}[LMB / E: press]`;
+        return `${l}[LMB / F: press]`;
       },
       primary: press,
     });

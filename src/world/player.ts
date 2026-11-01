@@ -97,13 +97,13 @@ export class Player {
         return;
       }
       this.keys.add(e.code);
-      if (e.code === 'KeyE') this.actDown(0);
+      if (e.code === 'KeyF') this.actDown(0);
       else if (e.code === 'KeyR') this.actDown(2);
-      else if (e.code === 'KeyF' || e.code === 'KeyQ') this.focus = !this.focus;
+      else if (e.code === 'KeyZ') this.focus = !this.focus;
     });
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
-      if ((e.code === 'KeyE' && this.held?.button === 0) || (e.code === 'KeyR' && this.held?.button === 2)) this.actUp();
+      if ((e.code === 'KeyF' && this.held?.button === 0) || (e.code === 'KeyR' && this.held?.button === 2)) this.actUp();
     });
     window.addEventListener('blur', () => this.releaseAll());
     this.canvas.addEventListener('click', () => {

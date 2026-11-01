@@ -19,11 +19,12 @@ npm run build
 | --- | --- |
 | Mouse | Look |
 | WASD / arrows, Shift | Walk, walk faster |
-| Left click / E | Press button, turn switch clockwise, knob up |
+| Left click / F | Press button, turn switch clockwise, knob up |
 | Right click / R | Turn switch counter-clockwise, knob down |
 | Mouse wheel (Shift = coarse) | Turn knob / switch under the crosshair |
 | Hold LMB / RMB on rod lever | Withdraw / insert rods |
-| F or Q | Zoom in to read gauges |
+| Z | Zoom in to read gauges |
+| E | Explain the latest alarm and how to fix it |
 | `[` `]` | Time compression 1×–30× |
 | Tab | Startup procedure binder (auto-ticks) |
 | L | Logbook and reactivity balance |

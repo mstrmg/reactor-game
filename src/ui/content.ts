@@ -7,8 +7,10 @@ export const KEYS_WORLD: [string, string][] = [
   ['Left click', 'Press button / turn switch or knob clockwise'],
   ['Right click', 'Turn switch or knob counter-clockwise'],
   ['Mouse wheel', 'Fine-adjust the knob or setpoint under the crosshair'],
-  ['E', 'Activate the control under the crosshair'],
-  ['F or Q', 'Lean in to read a panel (hold)'],
+  ['F', 'Activate the control under the crosshair (same as left click)'],
+  ['R', 'Same as right click'],
+  ['Z', 'Zoom in to read gauges (toggle)'],
+  ['E', 'When an alarm pops up: show how to fix it'],
   ['Esc', 'Release the mouse and pause'],
 ];
 
