@@ -42,7 +42,7 @@ export const TRIP_SHORT: Record<TripId, string> = {
   STARTUP_RATE: 'SUR HI',
 };
 
-export const FAULT_LABEL: Record<FaultId, string> = {
+export const FAULT_LABEL: Partial<Record<FaultId, string>> = {
   STUCK_ROD: 'Stuck control rod',
   DROPPED_ROD: 'Dropped control rod',
   RCP_TRIP: 'Reactor coolant pump trip',
@@ -56,6 +56,9 @@ export const FAULT_LABEL: Record<FaultId, string> = {
   TURBINE_TRIP_SPURIOUS: 'Spurious turbine trip',
   STEAM_LINE_BREAK: 'Steam line break',
   INSTRUMENT_FAIL: 'Instrument channel failure',
+  CCW_PUMP_TRIP: 'Component cooling water pump trip',
+  CIRC_WATER_PUMP_TRIP: 'Circulating water pump trip',
+  CONDENSATE_PUMP_TRIP: 'Condensate pump trip',
 };
 
 export function tripLabel(id: TripId | null | undefined): string {

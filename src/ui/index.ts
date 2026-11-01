@@ -3,12 +3,13 @@
  * controls sheet and the incident report (game over).
  * Text refreshes at ~7 Hz; nothing here runs per-frame work beyond a timer.
  */
-import type { PlantState, ReactorSimApi, ScenarioId, SimEvent, AlarmSeverity } from '../sim/types';
+import type { PlantState, ReactorSimApi, ScenarioId, SimEvent, AlarmSeverity, ActiveFault, FaultId } from '../sim/types';
 import { bus } from '../core/bus';
 import { audioPrefs } from '../audio/prefs';
 import { CATASTROPHE_TITLE, SCENARIOS, TRIP_SHORT, faultLabel, tripLabel } from './labels';
 import { KEYS_UI, KEYS_WORLD, PRIMER } from './content';
-import { RUNNING_CHECKS, STARTUP } from './procedures';
+import { RUNNING_CHECKS, STARTUP, type ProcStep } from './procedures';
+import { alarmHelp, faultHelp, relatedValues, tripAdvice } from './alarmHelp';
 
 export interface UIApi {
   update(dt: number): void;
@@ -170,7 +171,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       <div class="cell cell--status" data-ref="statusCell"><span class="k">Reactor</span><span class="v" data-ref="status">—</span></div>
       <div class="cell cell--alm" data-ref="almCell"><span class="k">Alarms</span><span class="v" data-ref="alm">0</span></div>
     </div>
-    <div class="hint" data-ref="hint">Tab procedures · H controls · [ ] time</div>
+    <div class="hint" data-ref="hint">E alarm help · Tab procedure · Z zoom · H controls · [ ] time</div>
     <div class="mute" data-ref="mute" hidden>Sound off (M)</div>
     <div class="toast" data-ref="toast" hidden></div>
     <ol class="oplog" data-ref="oplog" aria-live="polite"></ol>
@@ -185,25 +186,42 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   const proc = h('aside', 'proc');
   proc.hidden = true;
   proc.innerHTML = `
-    <header class="proc__head"><span class="proc__doc">OP-2.1 Plant startup, Mode 3 to Mode 1</span><span class="proc__key">Tab</span></header>
+    <header class="proc__head"><span class="proc__doc">OP-2.1 Plant startup</span><span class="proc__prog" data-ref="procProg"></span></header>
+    <section class="now" data-ref="now">
+      <div class="now__tag">Do this now <span data-ref="nowPhase"></span></div>
+      <h3 class="now__title" data-ref="nowTitle"></h3>
+      <dl class="now__where">
+        <div><dt>Board</dt><dd data-ref="nowWhere"></dd></div>
+        <div><dt>Control</dt><dd data-ref="nowCtl"></dd></div>
+      </dl>
+      <p class="now__act" data-ref="nowAct"></p>
+      <div class="now__meter">
+        <div><span>Target</span><b data-ref="nowTarget"></b></div>
+        <div><span>Now</span><b data-ref="nowVal"></b></div>
+        <em class="now__state" data-ref="nowState">Not yet</em>
+      </div>
+      <p class="now__gotcha" data-ref="nowGotcha"></p>
+    </section>
     <div class="proc__body" data-ref="procBody"></div>
-    <h3 class="proc__sec">Running checks</h3>
+    <h3 class="proc__sec">Running checks <small>keep these green once at power</small></h3>
     <ul class="checks" data-ref="checks"></ul>`;
   root.appendChild(proc);
   const pR = refs(proc);
   const stepEls = new Map<string, { li: HTMLElement; val: HTMLElement }>();
+  const allSteps: { step: ProcStep; phase: string; n: number }[] = [];
   {
     let n = 0;
-    for (const sec of STARTUP) {
-      pR.procBody.appendChild(h('h3', 'proc__sec', esc(sec.section)));
+    for (const ph of STARTUP) {
+      pR.procBody.appendChild(h('h3', 'proc__sec', esc(ph.name)));
       const ol = h('ol', 'steps');
-      for (const s of sec.steps) {
+      for (const st_ of ph.steps) {
         n++;
+        allSteps.push({ step: st_, phase: ph.name, n });
         const li = h('li', 'step');
         li.innerHTML = `<span class="step__n">${n}</span><span class="step__box" aria-hidden="true"></span>
-          <span class="step__t">${esc(s.text)}<small>${esc(s.hint)}</small></span><span class="step__v"></span>`;
+          <span class="step__t">${esc(st_.title)}</span><span class="step__v"></span>`;
         ol.appendChild(li);
-        stepEls.set(s.id, { li, val: li.querySelector('.step__v') as HTMLElement });
+        stepEls.set(st_.id, { li, val: li.querySelector('.step__v') as HTMLElement });
       }
       pR.procBody.appendChild(ol);
     }
@@ -213,6 +231,138 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     pR.checks.appendChild(li);
     return { li, v: li.querySelector('.check__v') as HTMLElement };
   });
+  let currentStepId: string | null | undefined = undefined; // undefined = not evaluated since start
+
+  // ================= ALARM CARD + ALARM HELP (E) =================
+  interface HelpItem { key: string; kind: 'alarm' | 'fault'; id: string; label: string; severity: Sev; t: number; fault?: ActiveFault }
+  const acard = h('div', 'acard');
+  acard.hidden = true;
+  acard.innerHTML = `<div class="acard__tile" data-ref="acTile"></div>
+    <div class="acard__body"><div class="acard__m" data-ref="acMean"></div>
+    <div class="acard__k"><kbd>E</kbd> How to fix <span data-ref="acMore"></span></div></div>`;
+  hud.appendChild(acard);
+  const acR = refs(acard);
+  const ahelp = h('aside', 'ahelp');
+  ahelp.hidden = true;
+  ahelp.innerHTML = `<header class="ahelp__head"><div class="ahelp__tile" data-ref="ahTile"></div><span class="ahelp__pos" data-ref="ahPos"></span></header>
+    <div class="ahelp__body" data-ref="ahBody">
+      <p class="ahelp__mean" data-ref="ahMean"></p>
+      <p class="ahelp__first" data-ref="ahFirst"></p>
+      <h4>What to do</h4><ol class="ahelp__acts" data-ref="ahActs"></ol>
+      <h4>Right now</h4><dl class="ahelp__live" data-ref="ahLive"></dl>
+      <h4 data-ref="ahCausesH">Likely causes</h4><ul class="ahelp__causes" data-ref="ahCauses"></ul>
+    </div>
+    <footer class="ahelp__foot"><span><kbd>E</kbd> next</span><span><kbd>Q</kbd> previous</span><span><kbd>X</kbd> close</span><span><kbd>↑</kbd><kbd>↓</kbd> scroll</span></footer>`;
+  root.appendChild(ahelp);
+  const ahR = refs(ahelp);
+  let lastPopup: HelpItem | null = null;
+  let acardUntil = 0;
+  let lastPopAt = 0;
+  let helpList: HelpItem[] = [];
+  let helpIdx = -1;
+  const knownFaults: HelpItem[] = [];
+  const SEV_RANK: Record<Sev, number> = { trip: 4, fault: 3, alarm: 2, warning: 1, info: 0 };
+
+  function popAlarm(item: HelpItem) {
+    const nowMs = performance.now();
+    if (lastPopup && lastPopup.key === item.key && nowMs - lastPopAt < 2000) return;
+    if (lastPopup && nowMs < acardUntil && nowMs - lastPopAt < 5000 && SEV_RANK[lastPopup.severity] > SEV_RANK[item.severity]) {
+      const others = activeAlarmItems().filter((x) => x.key !== lastPopup!.key).length;
+      acR.acMore.textContent = others ? `· ${others} other active` : '';
+      return;
+    }
+    lastPopAt = nowMs;
+    lastPopup = item;
+    const help = item.kind === 'fault' ? faultHelp(item.fault!.id, item.fault!.description) : alarmHelp(item.id, item.severity);
+    acR.acTile.textContent = item.label;
+    acard.dataset.sev = item.severity;
+    acR.acMean.textContent = firstSentence(help.meaning);
+    const others = activeAlarmItems().filter((x) => x.key !== item.key).length;
+    acR.acMore.textContent = others ? `· ${others} other active` : '';
+    acard.hidden = helpIdx >= 0;
+    acard.classList.remove('is-in');
+    void acard.offsetWidth;
+    acard.classList.add('is-in');
+    acardUntil = performance.now() + 12000;
+  }
+  function firstSentence(t: string): string {
+    const m = t.match(/^.*?[.!?;](\s|$)/);
+    let out = (m ? m[0] : t).split(' — ')[0].trim().replace(/[;,]$/, '.');
+    if (out.length > 150) out = out.slice(0, 147).replace(/\s+\S*$/, '') + '…';
+    return out;
+  }
+  function activeAlarmItems(): HelpItem[] {
+    const s = st();
+    if (!s) return [];
+    return s.alarms
+      .filter((a) => a.active && a.severity !== 'info')
+      .map((a) => ({ key: `a:${a.id}`, kind: 'alarm' as const, id: a.id, label: a.label, severity: a.severity as Sev, t: a.time }))
+      .sort((x, y) => SEV_RANK[y.severity] - SEV_RANK[x.severity] || y.t - x.t);
+  }
+  function openHelp(dir: 1 | -1 = 1) {
+    if (helpIdx < 0) {
+      const act = activeAlarmItems();
+      const list: HelpItem[] = [];
+      if (lastPopup && (lastPopup.kind === 'fault' || act.some((a) => a.key === lastPopup!.key) || performance.now() < acardUntil)) list.push(lastPopup);
+      for (const a of act) if (!list.some((x) => x.key === a.key)) list.push(a);
+      for (const f of knownFaults.slice().reverse()) if (!list.some((x) => x.key === f.key)) list.push(f);
+      if (!list.length) {
+        toast('No active alarms · Tab shows the procedure');
+        return;
+      }
+      helpList = list;
+      helpIdx = 0;
+    } else {
+      helpIdx += dir;
+      if (helpIdx >= helpList.length || helpIdx < 0) {
+        closeHelp();
+        return;
+      }
+    }
+    acard.hidden = true;
+    ahelp.hidden = false;
+    renderHelp();
+    ahR.ahBody.scrollTop = 0;
+  }
+  function closeHelp() {
+    helpIdx = -1;
+    ahelp.hidden = true;
+  }
+  function renderHelp() {
+    const item = helpList[helpIdx];
+    if (!item) return;
+    const help = item.kind === 'fault' ? faultHelp(item.fault!.id, item.fault!.description) : alarmHelp(item.id, item.severity);
+    ahR.ahTile.textContent = item.label;
+    ahelp.dataset.sev = item.severity;
+    ahR.ahPos.textContent = helpList.length > 1 ? `${helpIdx + 1} of ${helpList.length}` : '';
+    ahR.ahMean.textContent = help.meaning;
+    const s = st();
+    const first = item.id === 'RX_TRIP' && s?.firstOut ? `First out: ${tripLabel(s.firstOut)}. ${tripAdvice(s.firstOut)}` : '';
+    ahR.ahFirst.textContent = first;
+    ahR.ahFirst.hidden = !first;
+    ahR.ahCauses.innerHTML = help.causes.map((c) => `<li>${esc(c)}</li>`).join('');
+    ahR.ahCauses.hidden = ahR.ahCausesH.hidden = !help.causes.length;
+    ahR.ahActs.innerHTML = help.actions.map((c) => `<li>${esc(c)}</li>`).join('');
+    renderHelpLive();
+  }
+  function renderHelpLive() {
+    const item = helpList[helpIdx];
+    const s = st();
+    if (!item || !s || !sim.controls) return;
+    const id = item.kind === 'fault' ? faultAlarmProxy(item.fault!.id) : item.id;
+    const rows = relatedValues(id, s, sim.controls);
+    const a = s.alarms.find((x) => x.id === item.id);
+    const status = item.kind === 'fault' ? 'Malfunction reported' : a ? (a.active ? (a.acknowledged ? 'Active, acknowledged' : 'Active, not acknowledged (ACK on REACTOR CONTROL)') : 'Cleared (RESET on REACTOR CONTROL to clear the window)') : '';
+    ahR.ahLive.innerHTML = [['Alarm', status] as [string, string], ...rows].map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
+  }
+  function faultAlarmProxy(id: FaultId): string {
+    const m: Partial<Record<FaultId, string>> = {
+      STUCK_ROD: 'ROD_DEV', DROPPED_ROD: 'ROD_BOTTOM', RCP_TRIP: 'RCP1_TRIP', MFP_TRIP: 'MFP_TRIP', FEED_VALVE_FAIL: 'SG1_LEVEL_LO',
+      PZR_PORV_STUCK_OPEN: 'PZR_PORV_OPEN', PZR_SPRAY_STUCK_OPEN: 'PZR_PRESS_LO', SG_TUBE_LEAK: 'MS_RAD_HI', SMALL_LOCA: 'RCS_LEAK',
+      LOSS_OF_OFFSITE_POWER: 'LOOP', TURBINE_TRIP_SPURIOUS: 'TURB_TRIP', STEAM_LINE_BREAK: 'STEAMLINE_P_LO', INSTRUMENT_FAIL: 'PR_CHANNEL_DEV',
+    };
+    return m[id] ?? 'RX_TRIP';
+  }
 
   // ================= SHEETS (help / logbook / primer) =================
   const sheetEl = h('section', 'sheet');
@@ -308,6 +458,11 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     mode = 'playing';
     log.length = 0;
     latched.clear();
+    currentStepId = undefined;
+    knownFaults.length = 0;
+    lastPopup = null;
+    acard.hidden = true;
+    closeHelp();
     overShown = false;
     overAt = 0;
     bannerUntil = 0;
@@ -334,6 +489,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     over.hidden = true;
     proc.hidden = true;
     procOpen = false;
+    root.classList.remove('proc-open');
     setSheet('none');
   }
 
@@ -348,6 +504,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   function doPause(note = '') {
     if (mode !== 'playing') return;
     awaitLockSince = 0;
+    closeHelp();
     if (sim.controls && !sim.controls.paused) bus.emit('pause-changed', true);
     if (sim.controls) sim.controls.paused = true;
     paR.pNote.textContent = note;
@@ -359,7 +516,17 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   function toggleProc() {
     procOpen = !procOpen;
     proc.hidden = !procOpen;
-    if (procOpen) refreshProc();
+    if (procOpen) {
+      refreshProc();
+      const id = currentStepId;
+      if (id) requestAnimationFrame(() => scrollToStep(id));
+    }
+    root.classList.toggle('proc-open', procOpen);
+  }
+  function scrollToStep(id: string) {
+    const li = stepEls.get(id)?.li;
+    if (!li) return;
+    proc.scrollTop = Math.max(0, li.offsetTop - pR.now.offsetHeight - 90);
   }
 
   function setSheet(k: typeof sheet) {
@@ -435,6 +602,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
         const sev: Sev = e.alarm.severity;
         addLog(t, `Alarm: ${e.alarm.label}`, sev);
         if (sev === 'alarm' || sev === 'trip') dropTime(e.alarm.label);
+        if (sev !== 'info') popAlarm({ key: `a:${e.alarm.id}`, kind: 'alarm', id: e.alarm.id, label: e.alarm.label, severity: sev, t });
         break;
       }
       case 'trip': {
@@ -443,11 +611,17 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
         addLog(t, `REACTOR TRIP · first out: ${tripLabel(first)}`, 'trip');
         showBanner('Reactor trip', `First out: ${tripLabel(first)}`);
         dropTime('reactor trip');
+        popAlarm({ key: 'a:RX_TRIP', kind: 'alarm', id: 'RX_TRIP', label: 'REACTOR TRIP', severity: 'trip', t });
         break;
       }
       case 'fault':
         addLog(t, e.fault.description || faultLabel(e.fault.id), 'fault');
         dropTime('malfunction');
+        {
+          const fi: HelpItem = { key: `f:${e.fault.id}:${e.fault.target ?? ''}`, kind: 'fault', id: e.fault.id, label: (faultLabel(e.fault.id) || e.fault.id).toUpperCase(), severity: 'fault', t, fault: e.fault };
+          knownFaults.push(fi);
+          popAlarm(fi);
+        }
         break;
       case 'si':
         addLog(t, 'SAFETY INJECTION actuated', 'trip');
@@ -523,6 +697,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     pause.hidden = true;
     proc.hidden = true;
     procOpen = false;
+    root.classList.remove('proc-open');
     setSheet('none');
     over.classList.remove('is-flash');
     over.classList.add('is-report');
@@ -588,7 +763,32 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
         audioPrefs.toggleMute();
         toast(audioPrefs.muted ? 'Sound off' : 'Sound on');
         break;
+      case 'KeyE':
+        if (mode === 'playing') openHelp(1);
+        break;
+      case 'KeyQ':
+      case 'ArrowLeft':
+        if (helpIdx >= 0) openHelp(-1);
+        break;
+      case 'ArrowRight':
+        if (helpIdx >= 0) openHelp(1);
+        break;
+      case 'ArrowDown':
+      case 'ArrowUp':
+        if (helpIdx >= 0) {
+          ev.preventDefault();
+          ahR.ahBody.scrollBy({ top: ev.code === 'ArrowDown' ? 120 : -120 });
+        } else if (procOpen) {
+          ev.preventDefault();
+          proc.scrollBy({ top: ev.code === 'ArrowDown' ? 120 : -120 });
+        }
+        break;
+      case 'KeyX':
+      case 'Backspace':
+        if (helpIdx >= 0) closeHelp();
+        break;
       case 'Escape':
+        if (helpIdx >= 0) closeHelp();
         if (!locked && sheet !== 'none') setSheet('none');
         break;
     }
@@ -653,37 +853,83 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     hR.alm.textContent = unack ? `${unack} new / ${active}` : String(active);
     hR.almCell.classList.toggle('is-flash', unack > 0);
 
-    if (procOpen) refreshProc();
+    refreshProc();
+    if (helpIdx >= 0) renderHelpLive();
     if (sheet === 'log') refreshLogbookLive();
   }
 
   function refreshProc() {
     const s = st();
     const c = sim.controls;
-    if (!s || !c) return;
-    let nextMarked = false;
-    for (const sec of STARTUP) {
-      for (const step of sec.steps) {
-        const el = stepEls.get(step.id)!;
-        let ok = false;
-        try {
-          ok = step.done(s, c);
-        } catch {
-          ok = false;
-        }
-        if (ok) latched.add(step.id);
-        const done = latched.has(step.id);
+    if (!s || !c || mode === 'title') return;
+    const firstEval = currentStepId === undefined;
+    let cur: (typeof allSteps)[number] | null = null;
+    let doneCount = 0;
+    for (const it of allSteps) {
+      let ok = false;
+      try {
+        ok = it.step.done(s, c);
+      } catch {
+        ok = false;
+      }
+      if (ok) latched.add(it.step.id);
+      const done = latched.has(it.step.id);
+      if (done) doneCount++;
+      else if (!cur) cur = it;
+      if (procOpen) {
+        const el = stepEls.get(it.step.id)!;
         el.li.classList.toggle('is-done', done);
         el.li.classList.toggle('is-live', ok);
-        const isNext = !done && !nextMarked;
-        if (isNext) nextMarked = true;
-        el.li.classList.toggle('is-next', isNext);
+        el.li.classList.toggle('is-next', cur === it);
         try {
-          el.val.textContent = step.value ? step.value(s, c) : '';
+          el.val.textContent = it.step.value(s, c);
         } catch {
           el.val.textContent = '';
         }
       }
+    }
+    const newId = cur ? cur.step.id : null;
+    if (!firstEval && newId !== currentStepId && mode === 'playing') {
+      const prev = allSteps.find((x) => x.step.id === currentStepId);
+      if (prev && latched.has(prev.step.id)) {
+        toast(cur ? `Step ${prev.n} done · next: ${cur.step.title} (Tab)` : 'Startup complete · keep the running checks green');
+        pR.now.classList.remove('is-adv');
+        void pR.now.offsetWidth;
+        pR.now.classList.add('is-adv');
+      }
+    }
+    const changed = newId !== currentStepId;
+    currentStepId = newId;
+    if (!procOpen) return;
+    if (changed && cur) requestAnimationFrame(() => scrollToStep(cur!.step.id));
+    pR.procProg.textContent = `${doneCount} of ${allSteps.length} done`;
+    if (cur) {
+      const st_ = cur.step;
+      pR.nowPhase.textContent = `· step ${cur.n} · ${cur.phase.replace(/^[A-Z]\. /, '')}`;
+      pR.nowTitle.textContent = st_.title;
+      pR.nowWhere.textContent = st_.where;
+      pR.nowCtl.textContent = st_.control;
+      pR.nowAct.textContent = st_.action;
+      pR.nowTarget.textContent = st_.target;
+      let v = '';
+      try {
+        v = st_.value(s, c);
+      } catch {
+        /* ignore */
+      }
+      pR.nowVal.textContent = v;
+      pR.nowState.textContent = 'Not yet';
+      pR.nowGotcha.textContent = st_.gotcha ? `Watch out: ${st_.gotcha}` : '';
+      pR.nowGotcha.hidden = !st_.gotcha;
+      pR.now.classList.remove('is-complete');
+      pR.now.querySelectorAll<HTMLElement>('.now__where, .now__meter, .now__act').forEach((e) => (e.hidden = false));
+    } else {
+      pR.nowPhase.textContent = '';
+      pR.nowTitle.textContent = 'Startup complete';
+      pR.nowAct.textContent = 'The unit is at full power. Keep every running check below green: watch Tavg, pressure, SG levels and xenon.';
+      pR.nowGotcha.hidden = true;
+      pR.now.classList.add('is-complete');
+      pR.now.querySelectorAll<HTMLElement>('.now__where, .now__meter').forEach((e) => (e.hidden = true));
     }
     RUNNING_CHECKS.forEach((chk, i) => {
       let ok = false;
@@ -766,6 +1012,10 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       if (bannerUntil && now > bannerUntil) {
         hR.banner.hidden = true;
         bannerUntil = 0;
+      }
+      if (acardUntil && now > acardUntil) {
+        acard.hidden = true;
+        acardUntil = 0;
       }
       if (toastUntil && now > toastUntil) {
         hR.toast.hidden = true;
