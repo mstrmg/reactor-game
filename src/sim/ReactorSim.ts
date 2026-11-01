@@ -20,6 +20,7 @@ import { UP, LP, CORE, HL, S1, S2, CL, NN, NODE_V, VFRAC, V_LOOPS, V_PZR } from 
 import { SCENARIOS, type ScenarioSpec } from './scenarios';
 import { evaluateRps, type RpsMemory, newRpsMemory } from './rps';
 import { AlarmManager } from './alarms';
+import { Bop, defaultBopControls, type Lineup } from './bop';
 import { FaultManager } from './faults';
 import { Rng } from './rng';
 
@@ -52,6 +53,7 @@ export function defaultControls(): PlantControls {
     mainFeedPumps: [true, false], auxFeedPumps: ['auto', 'auto', 'auto'],
     turbineLoadSetpointMW: 0, turbineRampRateMWpm: 10, steamDumpMode: 'pressure', steamDumpPressureSetpoint: 1092,
     siBlocked: false, timeScale: 1, paused: false,
+    ...defaultBopControls(),
   };
 }
 
@@ -181,6 +183,7 @@ export class ReactorSim implements ReactorSimApi {
 
   alarms = new AlarmManager();
   faults: FaultManager;
+  bop: Bop = new Bop(this);
 
   // instruments
   srCps = 0;
@@ -220,6 +223,7 @@ export class ReactorSim implements ReactorSimApi {
 
   press(button: ButtonId): void {
     const b = button as string;
+    if (this.bop.press(b)) return;
     switch (button) {
       case 'REACTOR_TRIP': this.manualTripPending = true; break;
       case 'TRIP_RESET': {
@@ -252,7 +256,7 @@ export class ReactorSim implements ReactorSimApi {
         if (why) { this.msg(`Turbine latch blocked: ${why}.`); break; }
         if (this.turb.latched) break;
         this.turb.latched = true; this.turb.tripped = false; this.turb.gv = 0;
-        this.msg('Turbine latched. Rolling to 1800 rpm.');
+        this.msg(`Turbine latched. Speed target ${(this.controls.turbineSpeedSetpointRpm ?? 1800).toFixed(0)} rpm at ${(this.controls.turbineAccelRpmPerMin ?? 200).toFixed(0)} rpm/min.`);
         break;
       }
       case 'GEN_BREAKER_CLOSE': {
@@ -261,6 +265,8 @@ export class ReactorSim implements ReactorSimApi {
         if (!tb.latched || tb.tripped) { this.msg('Breaker close blocked: turbine not latched.'); break; }
         if (Math.abs(tb.speed - 1800) > 8) { this.msg(`Breaker close blocked: turbine at ${tb.speed.toFixed(0)} rpm (need 1800 ± 8).`); break; }
         if (!this.offsite) { this.msg('Breaker close blocked: no grid voltage.'); break; }
+        const sync = this.bop.tryCloseBreaker();
+        if (sync !== 'ok') break;
         tb.breaker = true;
         tb.loadRef = Math.max(57, Math.min(this.controls.turbineLoadSetpointMW, 57));
         tb.mwInt = 0;
@@ -290,6 +296,8 @@ export class ReactorSim implements ReactorSimApi {
             if (!this.offsite) this.msg(`RCP ${i + 1} start blocked: no offsite power to the 6.9 kV bus.`);
             else if (mpaToPsig(this.P) < 325) this.msg(`RCP ${i + 1} start blocked: RCS pressure below 325 psig (seal ΔP).`);
             else if (this.faults.has('RCP_TRIP', i)) this.msg(`RCP ${i + 1} start blocked: breaker tripped on overcurrent (fault).`);
+            else if (this.bop.seized[i]) this.msg(`RCP ${i + 1} start blocked: pump bearing failed (seized shaft).`);
+            else if (this.bop.sealInjectionTotal() < 20 && this.bop.ccwFlowFrac() < 0.3) this.msg(`RCP ${i + 1} start blocked: no seal injection and no CCW to the thermal barrier.`);
             else { this.rcpOn[i] = true; this.msg(`RCP ${i + 1} started.`); }
           }
         }
@@ -302,7 +310,8 @@ export class ReactorSim implements ReactorSimApi {
     if (on) {
       if (!this.offsite) { this.msg(`MFP ${'AB'[i]} start blocked: no offsite power.`); this.controls.mainFeedPumps[i] = false; return; }
       if (this.fwIsolation) { this.msg(`MFP ${'AB'[i]} start blocked: feedwater isolation signal present.`); this.controls.mainFeedPumps[i] = false; return; }
-      if (this.vacuum < 20) { this.msg(`MFP ${'AB'[i]} start blocked: condenser vacuum low.`); this.controls.mainFeedPumps[i] = false; return; }
+      const sb = this.bop.mfpStartBlock();
+      if (sb) { this.msg(`MFP ${'AB'[i]} start blocked: ${sb}.`); this.controls.mainFeedPumps[i] = false; return; }
       if (this.faults.has('MFP_TRIP', i)) { this.msg(`MFP ${'AB'[i]} start blocked: tripped on fault, needs maintenance.`); this.controls.mainFeedPumps[i] = false; return; }
       this.mfpRunning[i] = true;
       this.msg(`Main feed pump ${'AB'[i]} started.`);
@@ -407,7 +416,10 @@ export class ReactorSim implements ReactorSimApi {
     } else {
       Object.assign(tb, { latched: false, tripped: true, speed: 0, gv: 0, breaker: false, loadRef: 0, mwInt: 0, breakerTripTimer: -1 });
     }
-    this.vacuum = 28;
+    const lineup: Lineup = spec.id === 'hot-standby' ? 'cold' : spec.id === 'low-power' ? 'partial' : 'full';
+    this.bop.init(lineup);
+    if (lineup === 'full') this.vacuum = 28;
+    if (lineup === 'cold') { this.afwAutoLatched = [true, true, false]; this.afwRunning = [true, true, false]; }
     // SG level controllers: preset integrator to steady feed
     // poisons and decay heat
     const xs = spec.xenon;
@@ -620,6 +632,7 @@ export class ReactorSim implements ReactorSimApi {
       this.electrical(dt);
     }
     this.updateNodeProps();
+    this.bop.step(dt);
     this.rpsAndLogic(dt);
     this.rodControl(dt);
     this.neutronics(dt);
@@ -763,6 +776,7 @@ export class ReactorSim implements ReactorSimApi {
   turbineTripConditions(): string | null {
     if (this.reactorTripped) return 'reactor tripped (P-4)';
     if (this.vacuum < 20) return 'condenser vacuum low';
+    if (this.bop.vibHighTimer > 2) return 'turbine vibration high';
     if (this.sg.some((s) => s.nr >= 78)) return 'SG level HI-HI (P-14)';
     if (this.siActuated) return 'safety injection';
     if (this.turb.speed > 1980) return 'overspeed';
@@ -787,6 +801,7 @@ export class ReactorSim implements ReactorSimApi {
     // load rejection: overspeed in proportion to the load dropped (OPC limits it)
     if (!tb.tripped) tb.speed += Math.min(120, (tb.mwe / 1150) * 110);
     tb.loadRef = 0;
+    this.bop.onBreakerOpened();
     this.emit({ type: 'breaker', closed: false });
     this.msg(reason);
   }
@@ -1208,7 +1223,9 @@ export class ReactorSim implements ReactorSimApi {
     const chIn = Math.max(0, ch - 12 * GPM_TO_KGS * (ccpAvail ? 1 : 0));
     // ---- VCT / makeup boron
     let mu = 0, cmu = this.vctBoron;
-    if (c.makeupMode === 'dilute') { mu = c.makeupRateGpm * GPM_TO_KGS; cmu = 0; }
+    const batchOk = this.bop.makeupAllowed();
+    if (!batchOk) { /* batch integrator not started: makeup valves stay shut */ }
+    else if (c.makeupMode === 'dilute') { mu = c.makeupRateGpm * GPM_TO_KGS; cmu = 0; }
     else if (c.makeupMode === 'borate') { mu = c.makeupRateGpm * GPM_TO_KGS; cmu = K.BORIC_ACID_PPM; }
     mu = clamp(mu, 0, 120 * GPM_TO_KGS);
     if (!power) mu = 0;
@@ -1269,6 +1286,16 @@ export class ReactorSim implements ReactorSimApi {
       hbar = this.hbarV();
       this.addMass(node, -dm, 0, 0, hbar);
       void pr;
+    }
+    // RCP seal leakage beyond normal #1 leak-off (overheated / failed seals) → containment
+    for (let i = 0; i < 4; i++) {
+      const W = this.bop.sealLossKgs(i);
+      if (W <= 0) continue;
+      const dm = Math.min(W * dt, this.ML * 0.005);
+      this.breakKgs += dm / dt;
+      this.toContainment(dm, this.h[CL(i)]);
+      hbar = this.hbarV();
+      this.addMass(CL(i), -dm, 0, 0, hbar);
     }
     // SG tube leak/rupture: primary → secondary
     this.tubeLeakKgs = 0;
@@ -1407,7 +1434,7 @@ export class ReactorSim implements ReactorSimApi {
     const f = (dm: number) => {
       const Mp = pz.M + dm;
       let hs: number;
-      if (dm >= 0) hs = this.h[sl];
+      if (dm >= 0) hs = this.insurgeH(P);
       else hs = pz.liquidV > 0.05 ? hf(P) : this.pzrDryH(P);
       const Pp = containerPressure(Mp, pz.U + dm * hs, V_PZR, P, out);
       const ml = this.ML - dm;
@@ -1443,7 +1470,10 @@ export class ReactorSim implements ReactorSimApi {
     }
     // apply
     const dm = dmSol;
-    const hs = dm >= 0 ? this.h[sl] : pz.liquidV > 0.05 ? hf(P) : this.pzrDryH(P);
+    const hs = dm >= 0 ? this.insurgeH(P) : pz.liquidV > 0.05 ? hf(P) : this.pzrDryH(P);
+    // insurge: the pressurizer stratifies, so subcooled insurge water does not immediately quench the
+    // steam space (insurgeH heats it partway toward saturation). The loops are debited dm·hs below, so
+    // energy is conserved.
     if (dm >= 0) pz.B += (dm * (this.bor[sl] - pz.B)) / Math.max(1, pz.M + dm);
     else this.bor[sl] += (-dm * (pz.B - this.bor[sl])) / (this.ML * VFRAC[sl]);
     pz.M += dm; pz.U += dm * hs;
@@ -1455,6 +1485,11 @@ export class ReactorSim implements ReactorSimApi {
     pz.liquidV = out.liquidVolume; pz.x = out.x; pz.T = out.T; pz.solid = out.solid;
     this.P = clamp(P, 0.0105, 60);
     this.updateNodeProps();
+  }
+  insurgeH(P: number) {
+    const hsl = this.h[HL(K.SURGE_LOOP)];
+    const hfp = hf(P);
+    return hsl < hfp ? hsl + 0.6 * (hfp - hsl) : hsl;
   }
   /** specific enthalpy of an all-vapour (possibly superheated) pressurizer */
   pzrDryH(P: number): number {
@@ -1470,11 +1505,9 @@ export class ReactorSim implements ReactorSimApi {
     const c = this.controls;
     const tb = this.turb;
     // ---- condenser
-    const circ = this.offsite;
     const load = (tb.wt + this.dumpPos * K.C_DUMP * this.Ph) / K.W_STEAM_RATED;
-    const vacT = circ ? 28 - 8 * Math.max(0, load - 1.05) : 0;
-    this.vacuum += (vacT - this.vacuum) * Math.min(1, dt / (circ ? 20 : 45));
-    const c9 = this.vacuum > 22 && circ;
+    this.bop.stepVacuum(dt, load);
+    const c9 = this.bop.condenserAvailable();
     // ---- steam dumps
     let dump = 0;
     const tavg = this.tavgF();
@@ -1518,7 +1551,7 @@ export class ReactorSim implements ReactorSimApi {
     if (!anyOpen) tb.wt = 0;
     tb.mwe = tb.breaker ? K.MW_PER_KGS * tb.wt * clamp(this.vacuum / 28, 0.5, 1.0) : 0;
     // ---- feedwater temperature
-    const tfwT = 38 + 189 * Math.pow(clamp(tb.wt / K.W_STEAM_RATED, 0, 1), 0.8);
+    const tfwT = this.bop.feedTempTargetC(tb.wt / K.W_STEAM_RATED);
     this.tFeed += (tfwT - this.tFeed) * Math.min(1, dt / 120);
     const hFw = hfT(this.tFeed);
     const hAfw = hfT(38);
@@ -1564,11 +1597,11 @@ export class ReactorSim implements ReactorSimApi {
       s.wFeed = s.fwPos * wmax;
       // ---- aux feed
       let wa = afwPer[i] * Math.sqrt(clamp(1 - s.P / 9.6, 0, 1) / (1 - 7.6 / 9.6));
-      if (afwThrottled) wa *= clamp(0.5 + (50 - s.nr) / 10, 0, 1);
+      if (afwThrottled) wa *= clamp(0.5 + (K.SG_LEVEL_SP - s.nr) / 10, 0, 1);
       s.wAux = wa;
       // ---- relief: ARV (1125 psig) & safeties (1185–1235)
       const ps = mpaToPsig(s.P);
-      const arvPos = clamp((ps - 1125) / 50, 0, 1);
+      const arvPos = clamp((ps - clamp(c.sgArvSetpointPsig ?? 1125, 1000, 1200)) / 50, 0, 1);
       s.wArv = arvPos * K.C_ARV * s.P;
       if (ps >= 1185) s.svOpen = true;
       if (ps < 1140) s.svOpen = false;
@@ -1631,9 +1664,13 @@ export class ReactorSim implements ReactorSimApi {
     if (!tb.breaker) {
       const steamOK = this.Ph > 3.0 && this.vacuum > 22 && this.sg.some((s) => s.msivOpen);
       if (steamOK) {
-        if (tb.speed > 1801) tb.speed = Math.max(1800, tb.speed - (600 / 60) * dt);
-        else tb.speed = Math.min(1800, tb.speed + (300 / 60) * dt);
-        tb.wt = 0.025 * K.W_STEAM_RATED * (0.25 + 0.75 * (tb.speed / 1800) ** 2);
+        // speed controller: ramp toward the operator's speed target at the selected acceleration
+        const sp = clamp(c.turbineSpeedSetpointRpm ?? 1800, 0, 1830);
+        const acc = (clamp(c.turbineAccelRpmPerMin ?? 200, 20, 400) / 60) * dt;
+        if (tb.speed > sp + 1) tb.speed = Math.max(sp, tb.speed - Math.max(acc, (600 / 60) * dt * (tb.speed > 1810 ? 1 : 0.3)));
+        else tb.speed = Math.min(sp, tb.speed + acc);
+        if (sp < 1 && tb.speed < 30) tb.speed = Math.max(0, tb.speed - dt);
+        tb.wt = tb.speed > 1 ? 0.025 * K.W_STEAM_RATED * (0.25 + 0.75 * (tb.speed / 1800) ** 2) : 0;
       } else {
         tb.wt = 0;
         tb.speed = Math.max(0, tb.speed - (tb.speed / 600) * dt);
@@ -1899,9 +1936,10 @@ export class ReactorSim implements ReactorSimApi {
     s.faults = this.faults.active;
     s.score = { ...this.score };
     // extras (additive contract)
+    s.bop = this.bop.publish();
     s.ext = {
       tavgProgramDeviation: s.tAvg - s.tRef,
-      steamDumpsAvailable: this.vacuum > 22 && this.offsite,
+      steamDumpsAvailable: this.bop.condenserAvailable(),
       coreLevelPct: this.coreLevel * 100,
       rcsInventoryPct: ((this.ML + this.pzr.M) / this.nominalInventory) * 100,
       hydrogenKg: this.cont.h2 + this.rcsH2,

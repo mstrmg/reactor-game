@@ -10,13 +10,14 @@ import { describeFault } from './describe';
 const ALL: FaultId[] = [
   'STUCK_ROD', 'DROPPED_ROD', 'RCP_TRIP', 'MFP_TRIP', 'FEED_VALVE_FAIL', 'PZR_PORV_STUCK_OPEN',
   'PZR_SPRAY_STUCK_OPEN', 'SG_TUBE_LEAK', 'SMALL_LOCA', 'LOSS_OF_OFFSITE_POWER', 'TURBINE_TRIP_SPURIOUS',
-  'STEAM_LINE_BREAK', 'INSTRUMENT_FAIL',
+  'STEAM_LINE_BREAK', 'INSTRUMENT_FAIL', 'CCW_PUMP_TRIP', 'CIRC_WATER_PUMP_TRIP', 'CONDENSATE_PUMP_TRIP',
 ];
 /** relative likelihood for the random-fault generator */
 const WEIGHT: Record<FaultId, number> = {
   STUCK_ROD: 0.7, DROPPED_ROD: 0.8, RCP_TRIP: 1, MFP_TRIP: 1.3, FEED_VALVE_FAIL: 1.3, PZR_PORV_STUCK_OPEN: 0.8,
   PZR_SPRAY_STUCK_OPEN: 0.9, SG_TUBE_LEAK: 0.9, SMALL_LOCA: 0.6, LOSS_OF_OFFSITE_POWER: 0.5,
   TURBINE_TRIP_SPURIOUS: 0.9, STEAM_LINE_BREAK: 0.35, INSTRUMENT_FAIL: 1.4,
+  CCW_PUMP_TRIP: 0.9, CIRC_WATER_PUMP_TRIP: 1.0, CONDENSATE_PUMP_TRIP: 1.0,
 };
 
 type InstrTarget = 'PR' | 'TAVG' | 'PZR_PRESS' | `SG_LEVEL_${number}`;
@@ -130,6 +131,29 @@ export class FaultManager {
         detail = `main steam line break inside containment on SG ${i + 1} (${(this.steamBreak[i] * 10.76).toFixed(2)} ft²)`;
         break;
       }
+      case 'CCW_PUMP_TRIP': {
+        const c = sim.controls.ccwPumps ?? [];
+        for (let k = 0; k < c.length; k++) c[k] = false;
+        tgt = undefined;
+        detail = 'CCW pump motor tripped on overcurrent; the standby CCW pump did not auto-start';
+        break;
+      }
+      case 'CIRC_WATER_PUMP_TRIP': {
+        const c = sim.controls.circWaterPumps ?? [];
+        const i = typeof target === 'number' ? target : this.pick(c.map((r, k) => (r ? k : -1)).filter((k) => k >= 0)) ?? 0;
+        c[i] = false;
+        tgt = i;
+        detail = `circulating water pump ${i + 1} tripped (motor ground fault)`;
+        break;
+      }
+      case 'CONDENSATE_PUMP_TRIP': {
+        const c = sim.controls.condensatePumps ?? [];
+        const i = typeof target === 'number' ? target : this.pick(c.map((r, k) => (r ? k : -1)).filter((k) => k >= 0)) ?? 0;
+        c[i] = false;
+        tgt = i;
+        detail = `condensate pump ${i + 1} tripped on motor overload`;
+        break;
+      }
       case 'INSTRUMENT_FAIL': {
         const opts: InstrTarget[] = ['PR', 'TAVG', 'PZR_PRESS', `SG_LEVEL_${rng.int(0, 3)}`];
         const t = (typeof target === 'string' ? target : rng.pick(opts)) as InstrTarget;
@@ -195,6 +219,9 @@ export class FaultManager {
       case 'TURBINE_TRIP_SPURIOUS': return sim.turb.latched && !sim.turb.tripped;
       case 'LOSS_OF_OFFSITE_POWER': return sim.offsite;
       case 'INSTRUMENT_FAIL': return !this.instr;
+      case 'CCW_PUMP_TRIP': return (sim.controls.ccwPumps ?? []).some(Boolean);
+      case 'CIRC_WATER_PUMP_TRIP': return (sim.controls.circWaterPumps ?? []).filter(Boolean).length >= 2;
+      case 'CONDENSATE_PUMP_TRIP': return (sim.controls.condensatePumps ?? []).filter(Boolean).length >= 2;
       default: return true;
     }
   }

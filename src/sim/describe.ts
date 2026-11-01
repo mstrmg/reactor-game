@@ -35,6 +35,9 @@ const FAULTS: Record<FaultId, string> = {
   TURBINE_TRIP_SPURIOUS: 'The main turbine tripped spuriously because of a control system fault',
   STEAM_LINE_BREAK: 'A main steam line broke, blowing down a steam generator and over-cooling the reactor coolant system',
   INSTRUMENT_FAIL: 'An instrument channel failed, feeding a false signal to its indicator and automatic controller',
+  CCW_PUMP_TRIP: 'The running component cooling water pump tripped: RCP bearings, thermal barriers and the letdown heat exchanger lose cooling until the standby pump is started',
+  CIRC_WATER_PUMP_TRIP: 'A circulating water pump tripped: condenser cooling is reduced and vacuum falls at high load',
+  CONDENSATE_PUMP_TRIP: 'A condensate pump tripped: main feed pump suction pressure falls and the feed pumps may trip on low suction',
 };
 
 export function describeTrip(id: TripId): string { return TRIPS[id] ?? id; }

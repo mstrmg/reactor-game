@@ -147,3 +147,86 @@ describe('descriptions and labels', () => {
     }
   });
 });
+
+describe('balance of plant', () => {
+  it('hot standby: full secondary lineup, turbine warm-up and in-phase synchronisation are reachable', async () => {
+    const { scriptedStartup } = await import('./startupScript');
+    const sim = new ReactorSim('hot-standby', 1);
+    sim.randomFaults = false;
+    // the secondary starts shut down
+    expect(sim.state.bop!.circWaterRunning.some(Boolean)).toBe(false);
+    expect(sim.state.condenserVacuum).toBeLessThan(1);
+    expect(sim.state.mainFeedPumpsRunning.some(Boolean)).toBe(false);
+    expect(sim.state.bop!.electrical.houseLoadsOn).toBe('SAT');
+    const r = scriptedStartup(sim, 4 * 3600);
+    expect(r).toBe('ok');
+    const b = sim.state.bop!;
+    expect(sim.state.generatorBreakerClosed).toBe(true);
+    expect(b.generator.damage).toBe(0);
+    expect(b.electrical.houseLoadsOn).toBe('UAT');
+    expect(sim.state.reactorTripped).toBe(false);
+    expect(sim.state.condenserVacuum).toBeGreaterThan(26);
+    expect(sim.state.mainFeedPumpsRunning[0]).toBe(true);
+  }, 120_000);
+
+  it('closing the generator breaker out of phase damages and trips the generator', () => {
+    const sim = new ReactorSim('low-power', 1);
+    sim.randomFaults = false;
+    sim.bop.rotorF = 545; // pretend the rotor is already warmed
+    sim.controls.turbineAccelRpmPerMin = 350;
+    sim.controls.turbineSpeedSetpointRpm = 1800;
+    sim.press('TURBINE_LATCH');
+    advance(sim, 420);
+    expect(sim.state.turbineSpeedRpm).toBeGreaterThan(1795);
+    sim.press('GEN_FIELD_CLOSE');
+    sim.controls.genVoltageSetpointKv = sim.state.bop!.generator.gridKv;
+    sim.controls.turbineSpeedSetpointRpm = 1802;
+    advance(sim, 30);
+    // wait for the synchroscope to be far from 12 o'clock
+    advance(sim, 60, (s) => Math.abs(s.state.bop!.generator.syncPhaseDeg) > 120);
+    expect(Math.abs(sim.state.bop!.generator.syncPhaseDeg)).toBeGreaterThan(100);
+    sim.press('GEN_BREAKER_CLOSE');
+    advance(sim, 5);
+    expect(sim.state.bop!.generator.damage).toBeGreaterThan(0.5);
+    expect(sim.state.generatorBreakerClosed).toBe(false);
+    expect(sim.state.turbineTripped).toBe(true);
+    expect(sim.state.alarms.some((a) => a.id === 'GEN_PROTECTION' && a.active)).toBe(true);
+  }, 60_000);
+
+  it('loss of component cooling water eventually fails an RCP bearing', () => {
+    const sim = new ReactorSim('full-power', 1);
+    sim.randomFaults = false;
+    sim.injectFault('CCW_PUMP_TRIP');
+    advance(sim, 60);
+    expect(sim.state.alarms.some((a) => a.id === 'CCW_FLOW_LO' && a.active)).toBe(true);
+    advance(sim, 1800, (s) => s.bop.seized.some(Boolean));
+    expect(sim.bop.seized.some(Boolean)).toBe(true);
+    advance(sim, 10);
+    expect(sim.state.reactorTripped).toBe(true); // locked rotor → low flow trip
+  }, 60_000);
+
+  it('a dilution batch stops itself when the batch integrator is satisfied', () => {
+    const sim = new ReactorSim('full-power', 1);
+    sim.randomFaults = false;
+    sim.controls.makeupBatchGallons = 100;
+    sim.controls.makeupMode = 'dilute';
+    sim.controls.makeupRateGpm = 60;
+    advance(sim, 30);
+    expect(sim.bop.batch.active).toBe(false); // not started: valves stay shut
+    sim.press('MAKEUP_BATCH_START');
+    expect(sim.bop.batch.active).toBe(true);
+    advance(sim, 130);
+    expect(sim.bop.batch.active).toBe(false);
+    expect(sim.controls.makeupMode).toBe('auto');
+    expect(sim.bop.batch.deliveredGal).toBeGreaterThanOrEqual(100);
+  }, 60_000);
+
+  it('every alarm has a fix guide', async () => {
+    const { ALARM_HELP } = await import('./alarmHelp');
+    const { ALARM_IDS } = await import('./alarms');
+    for (const id of ALARM_IDS) {
+      expect(ALARM_HELP[id], id).toBeDefined();
+      expect(ALARM_HELP[id].actions.length).toBeGreaterThan(0);
+    }
+  });
+});

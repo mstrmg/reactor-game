@@ -16,6 +16,9 @@ Every accident is the result of the physics. Nothing is scripted.
 | `alarms.ts` | annunciators (ack/reset, `alarm` events), `ALARM_LABELS` |
 | `faults.ts` | `FaultManager`: every `FaultId` acts on physics; random faults (first after 5–10 min, then every 10–25 min) |
 | `steam.ts`, `steamTables.ts` | IAPWS-IF97 saturation/liquid tables, `props(h,P)`, rigid-container equilibrium solver |
+| `bop.ts` | balance of plant: CW and condenser vacuum, condensate and MFP suction, FW heaters, turbine warm-up and vibration, generator excitation and synchroscope, house loads, CCW/SW, RCP bearings and seals, letdown HX, batch integrator |
+| `alarmHelp.ts` | `ALARM_HELP` fix guide for every annunciator |
+| `startupScript.ts` | `scriptedStartup()`: automated hot-standby → on-line sequence (tests) |
 | `plant.ts` | design constants. `scenarios.ts`: initial-condition specs. `describe.ts`: `describeTrip` and `describeFault` |
 
 ## Model summary
@@ -50,14 +53,35 @@ Internally the model uses MPa abs, °C, kg, kJ and kW. `PlantState` publishes ps
 | Tavg program | 557 °F at 0 % → 584.7 °F at 100 % (Tref from turbine load) |
 
 ## Startup from hot standby (`hot-standby` scenario)
-The scenario starts at 557 °F and 2235 psig. Shutdown banks are out and control banks are in. The plant has been xenon-free for 110 hours. The estimated critical position (ECP) is CD ≈ 130 steps.
-1. Leave rods in **manual** with `rodBankSelect = 'MANUAL_SEQ'`. Steam dumps stay in **pressure** mode (1092 psig). One MFP is running with feed in auto.
-2. Withdraw control banks in sequence (hold `rodMotion = +1`). Watch the source range rise. Between pulls, plot **1/M** (initial counts divided by current counts). Extrapolate it to zero to predict the critical rod position. If the ECP is far off, dilute (`makeupMode = 'dilute'`) or borate.
-3. Near criticality, withdraw in small increments. The reactor is critical when counts keep rising at a steady positive SUR with the rods stopped. Keep SUR below about **1 dpm**. The **startup-rate trip** acts at 5 dpm.
-4. Above P-6 (IR > 1e-10 A) the source-range trip is blocked automatically. Stabilize at IR ≈ 1e-8 A, then raise power slowly to **the point of adding heat** (~1–3 %). There, Tavg starts to rise and the steam dumps begin to open.
-5. Raise power to ~5–8 %. Press `TURBINE_LATCH`. The turbine rolls at 300 rpm/min to 1800 rpm. When it is at speed (±8 rpm), press `GEN_BREAKER_CLOSE`. Set `turbineLoadSetpointMW` and a ramp rate (≤ 5 %/min ≈ 50 MW/min while learning). As steam demand rises, pull rods to keep Tavg on the Tref program.
-6. Above 10 % (P-10) the low-power trips block. Start the second MFP before ~50 % load. Above **15 % turbine load** (C-5) rods may go to **auto**. Borate or dilute to keep control bank D in its band above the insertion limit. That limit is enforced by the ROD INSERTION LIM LO and LO-LO alarms. The adjustment compensates for the power defect and, later, for xenon.
-7. Watch out for these: xenon builds after any power change (`xenon-challenge`), SG shrink/swell on fast load changes, and OTΔT/OPΔT runbacks.
+**Initial state.**
+- **Reactor.** 557 °F and 2235 psig. Shutdown banks are out and control banks are in. The plant has been xenon-free for 110 h. The ECP is CD ≈ 130 steps.
+- **Secondary.** It is shut down: no circulating water, no vacuum, and condensate and main feed pumps are off. The motor-driven AFW pumps feed the SGs, and the SG ARVs (setpoint 1085 psig) carry decay heat.
+- **Turbine and electrical.** The turbine is on the turning gear with a cold rotor (~200 °F). The generator is not excited, and house loads are on the startup transformer (SAT).
+
+1. **Condenser.** Start the circulating water pumps. Put air removal on **HOGGING**. At ~19 in.Hg switch to **SJAE**. Above 22 in.Hg the steam dumps are available (C-9). Raise the **SG ARV setpoint** to 1125 psig so the dumps (pressure mode, 1092 psig) take the heat.
+2. **Feedwater.** Start two **condensate pumps**. Once MFP suction pressure exceeds ~250 psig, start **MFP A** with feed valves in AUTO. Then put the AFW pumps to OFF/AUTO (the AFW→MFW transfer).
+3. **Reactor to critical.** Rods stay in MANUAL, `MANUAL_SEQ`. Withdraw control banks and track **1/M**. Dilute or borate if the ECP is far off; with a batch set, use the batch integrator and MAKEUP BATCH START. Keep SUR ≤ 1 dpm (the trip is at 5 dpm). Stabilise at IR ≈ 1e-8 A above P-6, then raise power to the point of adding heat and on to ~3–8 %.
+4. **Turbine warm-up.** Make sure the turning gear is engaged, so eccentricity is normal. Set SPEED TARGET 500 rpm at 200 rpm/min and press TURBINE LATCH. Soak at 500 rpm until rotor temperature is within ~120 °F of steam temperature (~30–40 min), watching differential expansion.
+5. **Roll to speed.** Set the speed target to 1800 rpm with ≥ 300 rpm/min so the rotor passes quickly through the **1000–1300 rpm critical band**. Vibration trips the turbine at 14 mils.
+6. **Excite and synchronise.**
+   - Close the **FIELD BREAKER** and set the voltage setpoint so terminal kV = grid kV.
+   - Set the speed target to ~1801.5 rpm so the **synchroscope** turns slowly clockwise.
+   - Close the **generator breaker** with the needle within ±10° of 12 o'clock.
+
+   An out-of-phase close damages the generator and trips the unit.
+7. **After synchronising.**
+   - Transfer **house loads to UAT**. Put the **feedwater heaters** in service and the steam dumps in **TAVG** mode.
+   - Load at a few %/min, holding Tavg = Tref with rods. Above 15 % load (C-5) rods may go to AUTO.
+   - Start the second MFP before ~50 % load and the third condensate pump and third CW pump before ~90 %.
+   - Dilute (batch) for power defect and xenon while keeping control bank D above the insertion limit.
+8. **Hazards.**
+   - Losing a CCW pump: start the standby pump before RCP bearings reach ~230 °F. Stop an RCP whose bearing exceeds 195 °F.
+   - Low seal injection without CCW causes RCP seal failure, which is a small LOCA.
+   - Taking feedwater heaters out at power adds thermal power for the same load.
+
+`src/sim/startupScript.ts` (`scriptedStartup`) performs this whole sequence automatically. The tests use it.
+
+The **low-power** scenario is partly lined up: 2 CW pumps, vacuum on SJAE, 2 condensate pumps, MFP A, turbine on the turning gear with a lukewarm rotor, field open and house loads on SAT. **full-power** and **xenon-challenge** are fully lined up: 3 CW, 3 condensate, 2 MFPs, heaters in service, house on UAT, 1 CCW and 1 SW pump with their partners in standby.
 
 ## Tests
 `npx vitest run src/sim` covers these cases:
@@ -68,3 +92,8 @@ The scenario starts at 557 °F and 2235 psig. Shutdown banks are out and control
 - a total loss of feedwater with no AFW leads to fuel damage
 - no NaN at timeScale 30
 - alarm labels are at most 24 characters and uppercase
+- every alarm has a fix guide
+- a scripted hot-standby lineup and synchronisation succeeds
+- an out-of-phase breaker close damages and trips the generator
+- loss of CCW ends in an RCP bearing seizure and a reactor trip
+- the batch integrator stops a dilution by itself

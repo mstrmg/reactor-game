@@ -65,6 +65,32 @@ export interface PlantControls {
   /** Safety injection: manual block of low-pressurizer-pressure SI (allowed below P-11, ~1915 psig) */
   siBlocked: boolean;
 
+  // ---------- ADDITIVE: balance of plant (optional so older literals still type-check; the sim always fills them) ----------
+  /** circulating water pumps (3) — condenser cooling */
+  circWaterPumps?: boolean[];
+  /** condenser air removal: off, mechanical hogging pumps (pull-down to ~20 in.Hg), steam jet air ejectors (hold 28+ in.Hg, need steam) */
+  condenserAirRemoval?: 'off' | 'hogging' | 'sjae';
+  /** condensate pumps (3) — supply suction to the main feed pumps */
+  condensatePumps?: boolean[];
+  /** feedwater heaters (extraction steam) in service */
+  feedwaterHeaters?: boolean;
+  /** turbine speed target while rolling (0..1800 rpm) and acceleration (50..400 rpm/min) */
+  turbineSpeedSetpointRpm?: number;
+  turbineAccelRpmPerMin?: number;
+  /** turning gear engaged (only engages below ~5 rpm) */
+  turningGear?: boolean;
+  /** generator voltage regulator (AVR) setpoint, kV (18..26, grid ≈ 22) */
+  genVoltageSetpointKv?: number;
+  /** total RCP seal injection flow, gpm (0..40, normal 32) */
+  sealInjectionGpm?: number;
+  /** component cooling water pumps (2) and service water pumps (2) */
+  ccwPumps?: boolean[];
+  serviceWaterPumps?: boolean[];
+  /** CVCS batch integrator: gallons for the next dilute/borate batch (0 = continuous) */
+  makeupBatchGallons?: number;
+  /** SG atmospheric relief valve (ARV) pressure setpoint, psig (1000..1200) */
+  sgArvSetpointPsig?: number;
+
   /** Simulation */
   timeScale: number; // 1, 2, 5, 10, 30 — set by UI
   paused: boolean;
@@ -85,7 +111,16 @@ export type ButtonId =
   | `RCP_START_${0 | 1 | 2 | 3}`
   | `RCP_STOP_${0 | 1 | 2 | 3}`
   | 'MFP_A_TOGGLE'
-  | 'MFP_B_TOGGLE';
+  | 'MFP_B_TOGGLE'
+  // ADDITIVE
+  | 'GEN_FIELD_CLOSE' // close generator field breaker (excite the generator; needs > 1700 rpm)
+  | 'GEN_FIELD_OPEN'
+  | 'HOUSE_XFER_UAT' // transfer house loads to the unit auxiliary transformer (needs generator on line)
+  | 'HOUSE_XFER_SAT' // transfer house loads back to the startup transformer (offsite)
+  | 'MAKEUP_BATCH_START' // reset the batch integrator and start the selected dilute/borate batch
+  | 'MAKEUP_BATCH_STOP'
+  | `MSIV_CLOSE_${0 | 1 | 2 | 3}`
+  | `MSIV_OPEN_${0 | 1 | 2 | 3}`;
 
 export type AlarmSeverity = 'info' | 'warning' | 'alarm' | 'trip';
 
@@ -131,7 +166,11 @@ export type FaultId =
   | 'LOSS_OF_OFFSITE_POWER'
   | 'TURBINE_TRIP_SPURIOUS'
   | 'STEAM_LINE_BREAK'
-  | 'INSTRUMENT_FAIL'; // one channel of an instrument fails high/low
+  | 'INSTRUMENT_FAIL' // one channel of an instrument fails high/low
+  // ADDITIVE
+  | 'CCW_PUMP_TRIP' // running component cooling water pump(s) trip — RCP bearings / seals lose cooling
+  | 'CIRC_WATER_PUMP_TRIP' // a circulating water pump trips — condenser vacuum degrades
+  | 'CONDENSATE_PUMP_TRIP'; // a condensate pump trips — MFP suction pressure falls
 
 export interface ActiveFault {
   id: FaultId;
@@ -282,6 +321,63 @@ export interface PlantState {
 
   /** ADDITIVE (optional) extra indications published by the sim. Safe to ignore. */
   ext?: PlantExt;
+  /** ADDITIVE (optional) balance-of-plant indications. */
+  bop?: BopState;
+}
+
+/** Balance-of-plant / electrical / auxiliary systems indications (additive). */
+export interface BopState {
+  circWaterRunning: boolean[]; // 3
+  condenserAirRemoval: 'off' | 'hogging' | 'sjae';
+  hotwellLevelPct: number;
+  condensateRunning: boolean[]; // 3
+  mfpSuctionPsig: number;
+  feedwaterTempF: number;
+  feedwaterHeatersInService: boolean;
+  turbine: {
+    speedSetpointRpm: number;
+    rotorTempF: number; // HP rotor metal temperature
+    steamInletTempF: number;
+    diffExpansionPct: number; // % of limit (rotor/casing differential expansion, from warm-up mismatch)
+    vibrationMils: number; // trips at 14
+    eccentricityMils: number; // rotor bow (turning gear off while stopped)
+    turningGearEngaged: boolean;
+    inCriticalBand: boolean; // 1000–1300 rpm
+  };
+  generator: {
+    fieldBreakerClosed: boolean;
+    terminalKv: number;
+    gridKv: number;
+    voltageSetpointKv: number;
+    slipHz: number; // generator − grid frequency
+    syncPhaseDeg: number; // synchroscope needle, −180..180 (0 = in phase)
+    mvar: number;
+    powerFactor: number;
+    damage: number; // 0..1 (out-of-phase closures etc.)
+    netMWe: number; // gross − house loads
+  };
+  electrical: {
+    houseLoadsOn: 'SAT' | 'UAT';
+    houseLoadMW: number;
+    safetyBusesEnergised: boolean[]; // 2 (offsite or diesel)
+    dieselLoadPct: number[]; // 2
+  };
+  ccw: {
+    pumpsRunning: boolean[]; // 2
+    serviceWaterRunning: boolean[]; // 2
+    supplyTempF: number;
+    flowPct: number;
+  };
+  rcpAux: {
+    bearingTempF: number[]; // 4 — alarm 195, bearing failure ~230
+    sealTempF: number[]; // 4
+    sealLeakoffGpm: number[]; // 4 (#1 seal leak-off; > ~8 abnormal; seal failure → tens–hundreds gpm)
+    sealInjectionGpm: number; // total
+    seized: boolean[]; // 4 — bearing failed (locked rotor)
+  };
+  letdownHxOutletTempF: number;
+  makeupBatch: { active: boolean; targetGal: number; deliveredGal: number };
+  sgArvSetpointPsig: number;
 }
 
 /** Extra indications (additive contract extension, populated by src/sim). */

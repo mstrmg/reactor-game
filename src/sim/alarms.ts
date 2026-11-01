@@ -8,6 +8,7 @@
  */
 import type { Alarm, AlarmSeverity, PlantState } from './types';
 import type { ReactorSim } from './ReactorSim';
+import { W_STEAM_RATED } from './plant';
 
 interface AlarmDef {
   id: string;
@@ -29,6 +30,8 @@ for (let i = 0; i < 4; i++) {
       cond: (s) => s.loops[i].steamFlow > 5 && Math.abs(s.loops[i].steamFlow - s.loops[i].feedFlow) > 12,
     },
     { id: `RCP${n}_TRIP`, label: `RCP ${n} TRIP`, severity: 'alarm', cond: (s, sim) => !s.loops[i].rcpRunning && sim.spec.id !== undefined && sim.rcpWasRunning(i) },
+    { id: `RCP${n}_BRG_TEMP`, label: `RCP ${n} BEARING TEMP HI`, severity: 'alarm', cond: (_s, sim) => sim.bop.bearingF[i] > 195 },
+    { id: `RCP${n}_SEAL`, label: `RCP ${n} SEAL LEAKOFF HI`, severity: 'alarm', cond: (_s, sim) => sim.bop.sealLeak[i] > 6 || sim.bop.sealF[i] > 235 },
     { id: `LOOP${n}_FLOW_LO`, label: `RCS LOOP ${n} FLOW LO`, severity: 'alarm', cond: (s) => s.loops[i].flow < 90 },
   );
 }
@@ -78,20 +81,40 @@ const DEFS: AlarmDef[] = [
   { id: 'MS_RAD_HI', label: 'MAIN STEAM RAD HI', severity: 'alarm', cond: (_s, sim) => sim.tubeLeakKgs > 0.02 },
   { id: 'STEAMLINE_P_LO', label: 'STEAMLINE PRESS LO', severity: 'alarm', cond: (s) => s.loops.some((l) => l.sgPressure < 800) },
   { id: 'MSIV_CLOSED', label: 'MSIV CLOSED', severity: 'alarm', cond: (s) => !!s.ext && s.ext.msivOpen.some((o) => !o) },
-  { id: 'SG_PORV_OPEN', label: 'SG PORV/SAFETY OPEN', severity: 'warning', cond: (_s, sim) => sim.sg.some((g) => g.wArv > 1 || g.svOpen) },
+  { id: 'SG_PORV_OPEN', label: 'SG PORV/SAFETY OPEN', severity: 'warning', cond: (_s, sim) => sim.sg.some((g) => g.svOpen || (g.wArv > 1 && sim.bop.condenserAvailable())) },
   { id: 'MFP_TRIP', label: 'MAIN FEED PUMP TRIP', severity: 'alarm', cond: (s, sim) => s.mainFeedPumpsRunning.some((r, i) => !r && sim.mfpWasRunning(i)) },
   { id: 'FW_ISOL', label: 'FEEDWATER ISOLATION', severity: 'alarm', cond: (s) => !!s.ext?.fwIsolation },
   { id: 'AFW_RUNNING', label: 'AUX FEED PUMP RUNNING', severity: 'info', cond: (s) => s.auxFeedPumpsRunning.some((r) => r) },
   { id: 'STEAM_DUMP', label: 'STEAM DUMP ARMED/OPEN', severity: 'info', cond: (s) => s.steamDumpDemand > 0.02 },
   { id: 'COND_VAC_LO', label: 'CONDENSER VACUUM LO', severity: 'alarm', cond: (s) => s.condenserVacuum < 24 },
   { id: 'GEN_OVERSPEED', label: 'TURBINE OVERSPEED', severity: 'alarm', cond: (s) => s.turbineSpeedRpm > 1854 },
-  { id: 'TURB_VIB', label: 'TURBINE VIBRATION HI', severity: 'alarm', cond: (s) => s.integrity.secondary < 0.9 },
+  { id: 'TURB_VIB', label: 'TURBINE VIBRATION HI', severity: 'alarm', cond: (s, sim) => s.integrity.secondary < 0.9 || sim.bop.vib > 7 },
   { id: 'SG_CARRYOVER', label: 'SG MOISTURE CARRYOVER', severity: 'alarm', cond: (_s, sim) => sim.sg.some((g) => g.carry > 0) },
   { id: 'LOOP', label: 'LOSS OF OFFSITE POWER', severity: 'trip', cond: (s) => !s.offsitePower },
   { id: 'DG_RUNNING', label: 'DIESEL GEN RUNNING', severity: 'info', cond: (s) => s.dieselGeneratorsRunning.some((r) => r) },
   { id: 'ACCUM_INJ', label: 'ACCUMULATOR INJECTING', severity: 'alarm', cond: (_s, sim) => sim.accum.some((a) => !a.isolated && a.water < 23900 && a.water > 0) },
   { id: 'RCS_OVERPRESS', label: 'RCS OVERPRESSURE', severity: 'trip', cond: (s) => s.rcsPressure > 2735 },
   { id: 'VESSEL_LEVEL_LO', label: 'RVLIS LEVEL LO', severity: 'alarm', cond: (s) => (s.ext?.coreLevelPct ?? 100) < 99.5 || (s.ext?.rcsInventoryPct ?? 100) < 75 },
+  // ---- balance of plant / auxiliaries
+  { id: 'CW_FLOW_LO', label: 'CIRC WATER FLOW LO', severity: 'alarm', cond: (_s, sim) => (sim.bop.nCW() < 2 && sim.turb.wt > 0.3 * W_STEAM_RATED) || (sim.bop.nCW() === 0 && sim.vacuum > 5) },
+  { id: 'HOTWELL_LEVEL', label: 'HOTWELL LEVEL HI/LO', severity: 'warning', cond: (_s, sim) => sim.bop.hotwell < 20 || sim.bop.hotwell > 80 },
+  { id: 'MFP_SUCTION_LO', label: 'MFP SUCTION PRESS LO', severity: 'alarm', cond: (_s, sim) => sim.mfpRunning.some(Boolean) && sim.bop.suctionPsig < 200 },
+  { id: 'FW_HTRS_OOS', label: 'FW HEATERS OUT OF SVC', severity: 'warning', cond: (_s, sim) => sim.turb.breaker && sim.turb.wt > 0.2 * W_STEAM_RATED && !sim.controls.feedwaterHeaters },
+  { id: 'TURB_ECCENTRIC', label: 'ROTOR ECCENTRICITY HI', severity: 'warning', cond: (_s, sim) => sim.bop.bow > 0.4 },
+  { id: 'TURB_DIFF_EXP', label: 'TURB DIFF EXPANSION HI', severity: 'alarm', cond: (_s, sim) => sim.bop.diffExp > 60 },
+  { id: 'TURB_CRIT_SPEED', label: 'TURB AT CRITICAL SPEED', severity: 'warning', cond: (_s, sim) => sim.bop.bandDwell > 20 },
+  { id: 'TURN_GEAR_OFF', label: 'TURNING GEAR DISENGAGED', severity: 'warning', cond: (_s, sim) => sim.turb.speed < 2 && !sim.controls.turningGear },
+  { id: 'GEN_FIELD_OFF', label: 'GEN FIELD BREAKER OPEN', severity: 'info', cond: (_s, sim) => sim.turb.speed > 1700 && !sim.bop.field },
+  { id: 'GEN_PROTECTION', label: 'GENERATOR PROTECT TRIP', severity: 'trip', cond: (_s, sim) => sim.bop.genDamage > 0 },
+  { id: 'GEN_MVAR', label: 'GEN MVAR LIMIT', severity: 'warning', cond: (_s, sim) => sim.turb.breaker && Math.abs(sim.bop.mvar) > 450 },
+  { id: 'HOUSE_ON_SAT', label: 'AUX LOADS ON SAT', severity: 'warning', cond: (_s, sim) => sim.turb.breaker && sim.turb.mwe > 150 && sim.bop.house === 'SAT' },
+  { id: 'CCW_FLOW_LO', label: 'CCW FLOW LO', severity: 'alarm', cond: (_s, sim) => sim.bop.ccwFlowFrac() < 0.3 },
+  { id: 'CCW_TEMP_HI', label: 'CCW TEMP HI', severity: 'alarm', cond: (_s, sim) => sim.bop.ccwF > 105 },
+  { id: 'SW_FLOW_LO', label: 'SERVICE WATER FLOW LO', severity: 'alarm', cond: (_s, sim) => !sim.bop.swRunning.some(Boolean) },
+  { id: 'SEAL_INJ_LO', label: 'SEAL INJECTION FLOW LO', severity: 'alarm', cond: (_s, sim) => sim.bop.sealInjectionTotal() < 20 && sim.rcpOn.some(Boolean) },
+  { id: 'LD_HX_TEMP_HI', label: 'LETDOWN HX OUT TEMP HI', severity: 'warning', cond: (_s, sim) => sim.bop.ldHxF > 145 },
+  { id: 'MAKEUP_BATCH', label: 'MAKEUP BATCH IN PROG', severity: 'info', cond: (_s, sim) => sim.bop.batch.active },
+  { id: 'DG_OVERLOAD', label: 'DIESEL GEN OVERLOAD', severity: 'alarm', cond: (s) => (s.bop?.electrical.dieselLoadPct ?? [0]).some((x) => x > 100) },
   { id: 'P6', label: 'P-6 IR ABOVE 1E-10', severity: 'info', cond: (s) => s.permissives.P6 },
   { id: 'P10', label: 'P-10 PR ABOVE 10%', severity: 'info', cond: (s) => s.permissives.P10 },
   { id: 'SI_BLOCKED', label: 'SI BLOCKED (P-11)', severity: 'info', cond: (_s, sim) => sim.controls.siBlocked },

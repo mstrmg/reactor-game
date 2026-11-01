@@ -43,7 +43,7 @@ export const SCENARIOS: Record<ScenarioId, ScenarioSpec> = {
     turbine: 'off',
     turbineMW: 0,
     steamDumpMode: 'pressure',
-    mainFeedPumps: [true, false],
+    mainFeedPumps: [false, false],
     xenon: { kind: 'shutdown', power: 1, hoursAgo: 110 },
     decay: { kind: 'shutdown', power: 1, hoursAgo: 110 },
     // ECP: critical with CD around 130 steps (seq 384 + 130)
@@ -51,7 +51,10 @@ export const SCENARIOS: Record<ScenarioId, ScenarioSpec> = {
     description:
       'Mode 3, 557 °F, 2235 psig. Shutdown banks withdrawn, control banks fully inserted, xenon-free. ' +
       'Estimated critical position: Control Bank D ≈ 130 steps. Take the reactor critical, ' +
-      'heat up to the point of adding heat, roll the turbine, synchronise and load the unit.',
+      'heat up to the point of adding heat, roll the turbine, synchronise and load the unit. The secondary ' +
+      'plant is shut down: decay heat goes out through the SG atmospheric relief valves and the motor-driven AFW ' +
+      'pumps feed the SGs. Establish circulating water and condenser vacuum, start condensate and a main feed ' +
+      'pump, warm the turbine on the turning gear / at 500 rpm, excite the generator and synchronise in phase.',
   },
   'low-power': {
     id: 'low-power',
