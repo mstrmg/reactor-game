@@ -12,6 +12,7 @@ import * as Tone from 'tone';
 import type { PlantState, ReactorSimApi, SimEvent } from '../sim/types';
 import { bus } from '../core/bus';
 import { audioPrefs } from './prefs';
+import { attachVoice } from './voice';
 
 export interface AudioApi {
   start(): Promise<void>;
@@ -146,6 +147,7 @@ export function createAudio(sim: ReactorSimApi): AudioApi {
     comp.threshold.value = -14;
     comp.ratio.value = 4;
     comp.connect(c.destination);
+    attachVoice(c, comp);
     muffle = c.createBiquadFilter();
     muffle.type = 'lowpass';
     muffle.frequency.value = 18000;
@@ -272,7 +274,17 @@ export function createAudio(sim: ReactorSimApi): AudioApi {
     play(kind as Kind, sfx, kind === 'knob' ? 0.6 : 0.9, 0.92 + Math.random() * 0.16);
   });
 
+  let remote = false;
+  bus.on('view-mode', (m) => {
+    remote = m !== 'control-room';
+    if (!ready || catastropheAt >= 0) return;
+    const now = ctx!.currentTime;
+    muffle.frequency.cancelScheduledValues(now);
+    muffle.frequency.setTargetAtTime(remote ? 1800 : 18000, now, 0.15);
+  });
+
   bus.on('start-game', () => {
+    remote = false;
     catastropheAt = -1;
     if (ready) {
       muffle.frequency.cancelScheduledValues(ctx!.currentTime);
