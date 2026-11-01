@@ -1,7 +1,9 @@
 /**
  * Operator fix guide for every annunciator window (shown by the UI when the player presses E).
- * Board sections: SAFETY & ELECTRICAL, CVCS/BORON, PRESSURIZER, RCS/RCPs, REACTOR CONTROL,
- * NUCLEAR INSTRUMENTATION, PLANT COMPUTER, STEAM GENERATORS, FEEDWATER & STEAM DUMP, TURBINE/GENERATOR.
+ * Board sections (placards): SAFETY SYSTEMS & ELECTRICAL, CVCS / BORON CONTROL, PRESSURIZER, REACTOR COOLANT SYSTEM,
+ * REACTOR CONTROL, NUCLEAR INSTRUMENTATION, PLANT COMPUTER, STEAM GENERATORS, FEEDWATER & STEAM DUMP, TURBINE / GENERATOR.
+ * Aux panels beside the board ends: ELECTRICAL DISTRIBUTION and COMPONENT COOLING / SERVICE WTR (left),
+ * CIRC WATER / COND VACUUM and CONDENSATE / FW HEATERS (right).
  */
 export interface AlarmHelp { meaning: string; causes: string[]; actions: string[] }
 
@@ -11,10 +13,10 @@ const H: Record<string, AlarmHelp> = {
     causes: ['An automatic protection trip (see the first-out on the PLANT COMPUTER)', 'Manual REACTOR TRIP button', 'Safety injection actuation'],
     actions: [
       'Verify all rod bottom lights and neutron power falling (NUCLEAR INSTRUMENTATION).',
-      'Verify turbine tripped and generator breaker open (TURBINE/GENERATOR).',
+      'Verify turbine tripped and generator breaker open (TURBINE / GENERATOR).',
       'Check SG levels are recovering — AFW should auto-start (FEEDWATER & STEAM DUMP).',
-      'Verify Tavg settling near 557 °F on the steam dumps; borate if it keeps falling (CVCS/BORON).',
-      'When the cause is fixed and no trip signal remains, press TRIP RESET (SAFETY & ELECTRICAL).',
+      'Verify Tavg settling near 557 °F on the steam dumps; borate if it keeps falling (CVCS / BORON CONTROL).',
+      'When the cause is fixed and no trip signal remains, press TRIP RESET (REACTOR CONTROL).',
     ],
   },
   TURB_TRIP: {
@@ -24,14 +26,14 @@ const H: Record<string, AlarmHelp> = {
       'Above 50 % power (P-9) this also trips the reactor — follow REACTOR TRIP actions.',
       'Below P-9, the steam dumps take the load: check STEAM DUMP mode is TAVG (FEEDWATER & STEAM DUMP).',
       'Insert rods / reduce power so Tavg returns to program (REACTOR CONTROL).',
-      'Fix the cause, then press TURBINE LATCH and roll the turbine again (TURBINE/GENERATOR).',
+      'Fix the cause, then press LATCH and roll the turbine again (TURBINE / GENERATOR).',
     ],
   },
   SI_ACT: {
     meaning: 'Safety injection is running: high-head pumps inject borated RWST water, the reactor and feedwater are tripped/isolated and the diesels start.',
     causes: ['Pressurizer pressure below 1807 psig', 'Steam line pressure below 600 psig', 'Containment pressure above 3.5 psig', 'Manual SI ACTUATE'],
     actions: [
-      'Verify reactor tripped, diesels running, SI flow indicated (SAFETY & ELECTRICAL).',
+      'Verify reactor tripped, diesels running, SI flow indicated (SAFETY SYSTEMS & ELECTRICAL).',
       'Find the leak: watch containment pressure, PRT, steam line pressures, SG levels.',
       'Keep AFW feeding the SGs (FEEDWATER & STEAM DUMP); isolate a faulted SG.',
       'When pressure and pressurizer level recover and subcooling > 20 °F, SI may be reset after 60 s (SI RESET).',
@@ -55,14 +57,14 @@ const H: Record<string, AlarmHelp> = {
       'Check PORVs closed; if one is stuck open, CLOSE its BLOCK VALVE (PRESSURIZER).',
       'Put spray in MANUAL and close it if it is stuck open (PRESSURIZER).',
       'Turn backup heaters ON (PRESSURIZER).',
-      'Look for a leak: charging vs letdown, containment pressure, RCS LEAKAGE (CVCS/BORON).',
+      'Look for a leak: charging vs letdown, containment pressure, RCS LEAKAGE (CVCS / BORON CONTROL).',
     ],
   },
   PZR_PRESS_LOLO: {
     meaning: 'Pressurizer pressure is below the 1807 psig safety-injection setpoint.',
     causes: ['LOCA', 'Stuck-open PORV or safety valve', 'Large overcooling (steam line break)'],
     actions: [
-      'Verify SI actuated (SAFETY & ELECTRICAL); actuate it manually if not.',
+      'Verify SI actuated (SAFETY SYSTEMS & ELECTRICAL); actuate it manually if not.',
       'Close the PORV block valve if a PORV is open (PRESSURIZER).',
       'Follow SAFETY INJECTION actions.',
     ],
@@ -71,8 +73,8 @@ const H: Record<string, AlarmHelp> = {
     meaning: 'Pressurizer water level is above 70 %. At 92 % (above P-7) the reactor trips — a solid pressurizer can lift the safety valves with water.',
     causes: ['Charging greater than letdown (charging in manual)', 'RCS heat-up (insurge)', 'Safety injection flow'],
     actions: [
-      'Put charging in AUTO or reduce CHARGING FLOW demand (CVCS/BORON).',
-      'Verify letdown is in service (LETDOWN ISOLATED switch off) (CVCS/BORON).',
+      'Put charging in AUTO or reduce CHARGING FLOW demand (CVCS / BORON CONTROL).',
+      'Verify letdown is in service (LETDOWN ISOL switch → NORM) (CVCS / BORON CONTROL).',
       'Stop the RCS heat-up: restore feedwater / reduce power.',
     ],
   },
@@ -80,16 +82,16 @@ const H: Record<string, AlarmHelp> = {
     meaning: 'Pressurizer level is below 17 %: letdown isolates and heaters trip off to protect them.',
     causes: ['RCS leak or LOCA', 'Letdown greater than charging', 'Cooldown (outsurge) after a trip or overcooling'],
     actions: [
-      'Raise CHARGING FLOW (manual) or check charging is in AUTO (CVCS/BORON).',
+      'Raise CHARGING FLOW (manual) or check charging is in AUTO (CVCS / BORON CONTROL).',
       'Look for a leak (RCS LEAKAGE, containment pressure, PRT).',
       'Stop overcooling: check steam dumps and feedwater (FEEDWATER & STEAM DUMP).',
-      'Once level is above 17 %, put letdown back in service (CVCS/BORON).',
+      'Once level is above 17 %, put letdown back in service (CVCS / BORON CONTROL).',
     ],
   },
   PZR_LEVEL_DEV: {
     meaning: 'Pressurizer level is more than 5 % away from its programmed level (25 % at no load → 61.5 % at full power).',
     causes: ['Charging in manual', 'Tavg change in progress', 'Small leak'],
-    actions: ['Put charging in AUTO (CVCS/BORON).', 'Check Tavg is on program (REACTOR CONTROL).'],
+    actions: ['Put charging in AUTO (CVCS / BORON CONTROL).', 'Check Tavg is on program (REACTOR CONTROL).'],
   },
   PZR_PORV_OPEN: {
     meaning: 'A pressurizer power-operated relief valve is open, discharging steam to the relief tank (PRT).',
@@ -113,26 +115,26 @@ const H: Record<string, AlarmHelp> = {
   PZR_HTR_OFF: {
     meaning: 'Pressurizer heaters are de-energised; pressure will drift down slowly.',
     causes: ['Heater switch OFF', 'Pressurizer level below 17 %', 'Loss of power to heater buses'],
-    actions: ['Restore pressurizer level above 17 % (CVCS/BORON).', 'Set heaters to AUTO (PRESSURIZER).'],
+    actions: ['Restore pressurizer level above 17 % (CVCS / BORON CONTROL).', 'Set heaters to AUTO (PRESSURIZER).'],
   },
   TAVG_TREF_DEV: {
     meaning: 'Average coolant temperature differs from its programmed reference (557 °F at no load → 584.7 °F at full load) by more than 5 °F.',
     causes: ['Turbine load changed faster than rods / boron can follow', 'Rods in manual', 'Xenon or boron change'],
     actions: [
-      'Tavg high: insert rods or borate (REACTOR CONTROL, CVCS/BORON). Tavg low: withdraw rods or dilute.',
+      'Tavg high: insert rods or borate (REACTOR CONTROL, CVCS / BORON CONTROL). Tavg low: withdraw rods or dilute.',
       'Put rods in AUTO above 15 % load (REACTOR CONTROL).',
-      'Slow the turbine ramp rate (TURBINE/GENERATOR).',
+      'Slow the turbine ramp rate (TURBINE / GENERATOR).',
     ],
   },
   TAVG_LOLO: {
     meaning: 'Tavg is below 553 °F (P-12): steam dumps are blocked to stop further cooldown.',
     causes: ['Overcooling: steam dumps, ARVs, steam leak, too much AFW'],
-    actions: ['Throttle AFW / feed flow (FEEDWATER & STEAM DUMP).', 'Check for a steam leak (steam line pressures).', 'Keep the reactor shut down; borate if needed (CVCS/BORON).'],
+    actions: ['Throttle AFW / feed flow (FEEDWATER & STEAM DUMP).', 'Check for a steam leak (steam line pressures).', 'Keep the reactor shut down; borate if needed (CVCS / BORON CONTROL).'],
   },
   OTDT_STOP: {
     meaning: 'Overtemperature or overpower ΔT is close to its trip setpoint: rods are blocked from withdrawing and the turbine runs back.',
     causes: ['Power too high for current pressure / Tavg', 'Low pressurizer pressure', 'High Tavg'],
-    actions: ['Reduce turbine load (TURBINE/GENERATOR).', 'Restore pressurizer pressure to 2235 psig (PRESSURIZER).', 'Insert rods to bring Tavg back to program (REACTOR CONTROL).'],
+    actions: ['Reduce turbine load (TURBINE / GENERATOR).', 'Restore pressurizer pressure to 2235 psig (PRESSURIZER).', 'Insert rods to bring Tavg back to program (REACTOR CONTROL).'],
   },
   IR_ROD_STOP: {
     meaning: 'Intermediate range current is above the C-1 rod-stop setpoint; rod withdrawal is blocked.',
@@ -142,33 +144,33 @@ const H: Record<string, AlarmHelp> = {
   PR_ROD_STOP: {
     meaning: 'Power range flux is above 103 % (C-2): rod withdrawal blocked.',
     causes: ['Overpower from rod withdrawal, dilution or cooldown', 'A failed-high NI channel'],
-    actions: ['Reduce power: insert rods or reduce turbine load (REACTOR CONTROL, TURBINE/GENERATOR).', 'Check the NI channels agree (NUCLEAR INSTRUMENTATION).'],
+    actions: ['Reduce power: insert rods or reduce turbine load (REACTOR CONTROL, TURBINE / GENERATOR).', 'Check the NI channels agree (NUCLEAR INSTRUMENTATION).'],
   },
   PR_HI: {
     meaning: 'Power range flux is high (above 103 %). The trip is at 109 %.',
     causes: ['Rod withdrawal, dilution or excess steam demand'],
-    actions: ['Insert rods immediately (REACTOR CONTROL).', 'Reduce turbine load (TURBINE/GENERATOR).', 'Stop any dilution (CVCS/BORON).'],
+    actions: ['Insert rods immediately (REACTOR CONTROL).', 'Reduce turbine load (TURBINE / GENERATOR).', 'Stop any dilution (CVCS / BORON CONTROL).'],
   },
   SUR_HI: {
     meaning: 'Startup rate is above 1 decade per minute. At 5 DPM the reactor trips.',
     causes: ['Rods withdrawn too far / too fast near criticality', 'Dilution while critical', 'Cooldown adding positive reactivity'],
-    actions: ['Stop rod withdrawal; insert a few steps until SUR < 1 DPM (REACTOR CONTROL).', 'Stop dilution (CVCS/BORON).'],
+    actions: ['Stop rod withdrawal; insert a few steps until SUR < 1 DPM (REACTOR CONTROL).', 'Stop dilution (CVCS / BORON CONTROL).'],
   },
   SR_HI_SHUTDOWN: {
     meaning: 'Source range counts have risen by a factor of ~5 while shut down — the core may be approaching criticality.',
     causes: ['Boron dilution', 'Cooldown with negative moderator coefficient', 'Rod withdrawal'],
-    actions: ['Stop dilution; borate (CVCS/BORON).', 'Insert rods (REACTOR CONTROL).', 'Check shutdown margin (PLANT COMPUTER).'],
+    actions: ['Stop dilution; borate (CVCS / BORON CONTROL).', 'Insert rods (REACTOR CONTROL).', 'Check shutdown margin (PLANT COMPUTER).'],
   },
   PR_CHANNEL_DEV: {
     meaning: 'The power range channels disagree by more than 2 %. One detector may have failed, or the flux is tilted.',
     causes: ['Failed NI channel', 'Dropped rod (quadrant tilt)'],
-    actions: ['Compare NI channels and thermal power (NUCLEAR INSTRUMENTATION).', 'If a rod dropped, reduce power below 50 % (TURBINE/GENERATOR).', 'Do not use the failed channel for rod control decisions.'],
+    actions: ['Compare NI channels and thermal power (NUCLEAR INSTRUMENTATION).', 'If a rod dropped, reduce power below 50 % (TURBINE / GENERATOR).', 'Do not use the failed channel for rod control decisions.'],
   },
   AXIAL_FLUX: {
     meaning: 'Axial flux difference (ΔI) is outside its target band — power is skewed to the top or bottom of the core.',
     causes: ['Control rods too deep (bottom-peaked → negative ΔI)', 'Xenon redistribution after a power change'],
     actions: [
-      'ΔI too negative: withdraw rods and borate to compensate (REACTOR CONTROL, CVCS/BORON).',
+      'ΔI too negative: withdraw rods and borate to compensate (REACTOR CONTROL, CVCS / BORON CONTROL).',
       'ΔI too positive: insert rods and dilute to compensate.',
       'Avoid large, fast power changes while xenon is changing.',
     ],
@@ -176,7 +178,7 @@ const H: Record<string, AlarmHelp> = {
   ROD_BOTTOM: {
     meaning: 'A control rod is at the bottom of the core while the reactor is not tripped.',
     causes: ['Dropped rod (gripper failure)'],
-    actions: ['Put rods in MANUAL (REACTOR CONTROL).', 'Reduce turbine load to below ~50 % (TURBINE/GENERATOR).', 'Trip the reactor if two or more rods dropped.'],
+    actions: ['Put rods in MANUAL (REACTOR CONTROL).', 'Reduce turbine load to below ~50 % (TURBINE / GENERATOR).', 'Trip the reactor if two or more rods dropped.'],
   },
   ROD_DEV: {
     meaning: 'A rod is out of step with the rest of its bank.',
@@ -186,38 +188,38 @@ const H: Record<string, AlarmHelp> = {
   RIL_LO: {
     meaning: 'Control banks are approaching the rod insertion limit for this power level.',
     causes: ['Rods inserted to compensate for boron / xenon / power changes'],
-    actions: ['Dilute to let rods withdraw (CVCS/BORON: MAKEUP DILUTE, batch).', 'Reduce turbine load slowly if necessary.'],
+    actions: ['Dilute to let rods withdraw (CVCS / BORON CONTROL: MAKEUP MODE → DIL, BATCH GALLONS).', 'Reduce turbine load slowly if necessary.'],
   },
   RIL_LOLO: {
     meaning: 'Control banks are below the rod insertion limit: shutdown margin and power distribution limits may be violated.',
     causes: ['Rods driven in by auto rod control after a load reduction or xenon build-in'],
-    actions: ['Borate immediately and/or reduce load until rods are above the limit (CVCS/BORON).', 'This is a Technical Specification violation — fix within minutes.'],
+    actions: ['Borate immediately and/or reduce load until rods are above the limit (CVCS / BORON CONTROL).', 'This is a Technical Specification violation — fix within minutes.'],
   },
   SDM_LO: {
     meaning: 'Shutdown margin is low: if tripped now, the reactor might not be far enough subcritical.',
     causes: ['Boron too low', 'Stuck rod', 'Cooldown'],
-    actions: ['Borate (CVCS/BORON: MAKEUP BORATE).', 'Stop any cooldown (FEEDWATER & STEAM DUMP).'],
+    actions: ['Borate (CVCS / BORON CONTROL: MAKEUP MODE → BOR).', 'Stop any cooldown (FEEDWATER & STEAM DUMP).'],
   },
   BORON_DILUTION: {
     meaning: 'A dilution (or boration) is in progress — the reactor reactivity is changing.',
     causes: ['MAKEUP mode DILUTE or BORATE selected'],
-    actions: ['Watch Tavg / SUR while diluting (REACTOR CONTROL).', 'Return MAKEUP to AUTO when done (CVCS/BORON).'],
+    actions: ['Watch Tavg / SUR while diluting (REACTOR CONTROL).', 'Return MAKEUP to AUTO when done (CVCS / BORON CONTROL).'],
   },
   CHG_FLOW: {
     meaning: 'Charging flow is abnormally high or low.',
     causes: ['Pressurizer level control demanding maximum (leak)', 'Charging in manual at an extreme'],
-    actions: ['Check pressurizer level trend and look for leakage (CVCS/BORON).', 'Return charging to AUTO.'],
+    actions: ['Check pressurizer level trend and look for leakage (CVCS / BORON CONTROL).', 'Return charging to AUTO.'],
   },
   LETDOWN_ISOL: {
     meaning: 'Letdown is isolated: no coolant leaves the RCS through the CVCS, so boron and level control are affected.',
     causes: ['Pressurizer level below 17 %', 'Operator isolated letdown', 'Safety injection'],
-    actions: ['Restore pressurizer level above 17 %.', 'Put letdown back in service (CVCS/BORON: LETDOWN ISOLATE off).', 'Reduce charging to avoid overfilling meanwhile.'],
+    actions: ['Restore pressurizer level above 17 %.', 'Put letdown back in service (CVCS / BORON CONTROL: LETDOWN ISOL → NORM).', 'Reduce charging to avoid overfilling meanwhile.'],
   },
   RCS_LEAK: {
     meaning: 'Unidentified RCS leakage is high: coolant is going somewhere it should not.',
     causes: ['Small LOCA', 'SG tube leak', 'Stuck-open PORV or spray valve', 'RCP seal leakage'],
     actions: [
-      'Check containment pressure and radiation (SAFETY & ELECTRICAL).',
+      'Check containment pressure and radiation (SAFETY SYSTEMS & ELECTRICAL).',
       'Check main steam radiation for a tube leak (STEAM GENERATORS).',
       'Check PORVs / block valves (PRESSURIZER).',
       'Raise charging to hold pressurizer level; if level cannot be held, trip and actuate SI.',
@@ -226,12 +228,12 @@ const H: Record<string, AlarmHelp> = {
   SUBCOOL_LO: {
     meaning: 'Core exit coolant is within 20 °F of boiling. Bubbles may form in the core and loops.',
     causes: ['Pressure falling (LOCA, PORV)', 'Temperature rising (loss of heat sink)'],
-    actions: ['Restore pressure (PRESSURIZER) or remove heat (FEEDWATER & STEAM DUMP).', 'If subcooling is lost after SI, keep SI running; consider stopping RCPs if voiding is severe (RCS/RCPs).'],
+    actions: ['Restore pressure (PRESSURIZER) or remove heat (FEEDWATER & STEAM DUMP).', 'If subcooling is lost after SI, keep SI running; consider stopping RCPs if voiding is severe (REACTOR COOLANT SYSTEM).'],
   },
   CET_HI: {
     meaning: 'Core exit thermocouples read above 700 °F — the core is not being cooled adequately.',
     causes: ['Core uncovering', 'Loss of all heat removal'],
-    actions: ['Ensure SI flow (SAFETY & ELECTRICAL).', 'Restore SG feed (AFW) and depressurise SGs with ARVs/dumps to cool the RCS (FEEDWATER & STEAM DUMP).', 'Open PORVs to allow SI to inject (PRESSURIZER).'],
+    actions: ['Ensure SI flow (SAFETY SYSTEMS & ELECTRICAL).', 'Restore SG feed (AFW) and depressurise SGs with ARVs/dumps to cool the RCS (FEEDWATER & STEAM DUMP).', 'Open PORVs to allow SI to inject (PRESSURIZER).'],
   },
   INADEQ_CORE_COOL: {
     meaning: 'Core exit temperature is above 1200 °F — fuel damage is imminent or occurring.',
@@ -241,7 +243,7 @@ const H: Record<string, AlarmHelp> = {
   DNBR_LO: {
     meaning: 'Departure-from-nucleate-boiling ratio is low: the hottest fuel rods are close to losing their water film.',
     causes: ['Power too high', 'RCS pressure low', 'Tavg high', 'Reduced RCS flow'],
-    actions: ['Reduce power (REACTOR CONTROL / TURBINE/GENERATOR).', 'Restore pressure to 2235 psig (PRESSURIZER).', 'Restore flow (RCS/RCPs).'],
+    actions: ['Reduce power (REACTOR CONTROL / TURBINE / GENERATOR).', 'Restore pressure to 2235 psig (PRESSURIZER).', 'Restore flow (REACTOR COOLANT SYSTEM).'],
   },
   FUEL_FAILURE: {
     meaning: 'High radiation in the letdown line: fuel cladding has failed and fission products are in the coolant.',
@@ -251,7 +253,7 @@ const H: Record<string, AlarmHelp> = {
   CNMT_PRESS_HI: {
     meaning: 'Containment pressure is above 1.5 psig. SI at 3.5 psig, MSIVs close at 18 psig, sprays at 28 psig.',
     causes: ['LOCA', 'Steam line break inside containment', 'PRT rupture disk burst'],
-    actions: ['Identify the source (RCS vs steam).', 'Verify fan coolers running; sprays start automatically if needed (SAFETY & ELECTRICAL).'],
+    actions: ['Identify the source (RCS vs steam).', 'Verify fan coolers running; sprays start automatically if needed (SAFETY SYSTEMS & ELECTRICAL).'],
   },
   CNMT_RAD_HI: {
     meaning: 'Containment radiation is high.',
@@ -286,7 +288,7 @@ const H: Record<string, AlarmHelp> = {
   MSIV_CLOSED: {
     meaning: 'One or more main steam isolation valves are closed — that SG cannot supply the turbine or dumps.',
     causes: ['Steam line isolation signal (SI on low steam pressure, containment HI-2)', 'Operator closure'],
-    actions: ['Remove decay heat with the SG ARVs (STEAM GENERATORS).', 'When the cause is cleared, reopen the MSIVs (STEAM GENERATORS).'],
+    actions: ['Remove decay heat with the SG ARVs (SG ARV SETPT knob, FEEDWATER & STEAM DUMP).', 'When the cause is cleared, reopen the MSIVs (STEAM GENERATORS).'],
   },
   SG_PORV_OPEN: {
     meaning: 'An SG atmospheric relief valve or safety valve is open, releasing steam to the atmosphere.',
@@ -297,7 +299,7 @@ const H: Record<string, AlarmHelp> = {
     meaning: 'A main feedwater pump has stopped. One pump cannot feed more than ~60 % power.',
     causes: ['Pump fault', 'Loss of condensate / suction pressure', 'Feedwater isolation', 'Loss of power'],
     actions: [
-      'Above ~60 % power reduce turbine load quickly to ~55 % (TURBINE/GENERATOR).',
+      'Above ~60 % power reduce turbine load quickly to ~55 % (TURBINE / GENERATOR).',
       'Watch SG levels; AFW starts automatically on lo-lo level (FEEDWATER & STEAM DUMP).',
       'Restart the pump when the cause is cleared (FEEDWATER & STEAM DUMP: MFP A/B).',
     ],
@@ -320,17 +322,17 @@ const H: Record<string, AlarmHelp> = {
   COND_VAC_LO: {
     meaning: 'Condenser vacuum is low. Below 22 in.Hg the steam dumps are blocked (C-9); below 20 in.Hg the turbine trips.',
     causes: ['Circulating water pumps stopped', 'Air removal (ejectors / vacuum pumps) not in service', 'Loss of offsite power', 'Too much steam to the condenser'],
-    actions: ['Start circulating water pumps (FEEDWATER & STEAM DUMP).', 'Put condenser air removal in service (hogging pumps, then SJAEs).', 'Reduce load if vacuum keeps falling (TURBINE/GENERATOR).'],
+    actions: ['Start circulating water pumps (CW PUMP A/B/C, CIRC WATER / COND VACUUM aux panel).', 'Put condenser air removal in service (AIR REMOVAL selector HOG, then SJAE).', 'Reduce load if vacuum keeps falling (TURBINE / GENERATOR).'],
   },
   GEN_OVERSPEED: {
     meaning: 'The turbine is overspeeding (> 1850 rpm).',
     causes: ['Load rejection with governor valves slow to close'],
-    actions: ['Trip the turbine if speed exceeds 1980 rpm (TURBINE/GENERATOR).'],
+    actions: ['Trip the turbine if speed exceeds 1980 rpm (TURBINE / GENERATOR).'],
   },
   TURB_VIB: {
     meaning: 'Turbine vibration is high — rubs, bowed rotor, water induction or rolling through the critical speed too slowly.',
     causes: ['Water carried over from SGs', 'Rolling a cold rotor too fast', 'Holding speed in the 1000–1300 rpm critical band', 'Rotor bowed (turning gear off)'],
-    actions: ['Trip the turbine if vibration keeps rising (TURBINE/GENERATOR).', 'Lower SG levels if carry-over is suspected.', 'Next roll: warm up at 500 rpm and pass through the critical band quickly.'],
+    actions: ['Trip the turbine if vibration keeps rising (TURBINE / GENERATOR).', 'Lower SG levels if carry-over is suspected.', 'Next roll: warm up at 500 rpm and pass through the critical band quickly.'],
   },
   SG_CARRYOVER: {
     meaning: 'SG water level is so high that water droplets are carried into the steam lines — this damages the turbine.',
@@ -341,15 +343,15 @@ const H: Record<string, AlarmHelp> = {
     meaning: 'Offsite power is lost. RCPs, main feed pumps and circulating water stop; the diesels power the safety buses.',
     causes: ['Grid disturbance / switchyard fault'],
     actions: [
-      'Verify reactor and turbine tripped and both diesels running (SAFETY & ELECTRICAL).',
+      'Verify reactor and turbine tripped and both diesels running (SAFETY SYSTEMS & ELECTRICAL).',
       'Verify AFW feeding and natural circulation (core ΔT < 50 °F, CET falling).',
-      'Use SG ARVs to remove decay heat (STEAM GENERATORS).',
+      'Use SG ARVs to remove decay heat (SG ARV SETPT knob, FEEDWATER & STEAM DUMP).',
     ],
   },
   DG_RUNNING: {
     meaning: 'An emergency diesel generator is running.',
     causes: ['Safety injection', 'Loss of offsite power', 'Bus undervoltage'],
-    actions: ['Verify it is loaded and its bus is energised (SAFETY & ELECTRICAL).'],
+    actions: ['Verify it is loaded and its bus is energised (DG LOAD meters, SAFETY BUS lamps — ELECTRICAL DISTRIBUTION aux panel).'],
   },
   ACCUM_INJ: {
     meaning: 'The cold-leg accumulators (600 psig nitrogen-pressurised tanks) are discharging into the RCS.',
@@ -364,7 +366,7 @@ const H: Record<string, AlarmHelp> = {
   VESSEL_LEVEL_LO: {
     meaning: 'Reactor vessel level (RVLIS) is low — steam is collecting above the core.',
     causes: ['LOCA, loss of inventory', 'Loss of heat sink (boil-off through PORV)'],
-    actions: ['Maximise SI (SAFETY & ELECTRICAL).', 'Depressurise (PORVs, SG ARVs) so low-pressure injection can work.'],
+    actions: ['Maximise SI (SAFETY SYSTEMS & ELECTRICAL).', 'Depressurise (PORVs, SG ARVs) so low-pressure injection can work.'],
   },
   P6: {
     meaning: 'Permissive P-6: intermediate range above 1E-10 A. The source range high-flux trip is blocked and the source range detectors de-energise.',
@@ -379,7 +381,7 @@ const H: Record<string, AlarmHelp> = {
   SI_BLOCKED: {
     meaning: 'Low-pressurizer-pressure safety injection is blocked (allowed below P-11, 1915 psig).',
     causes: ['Operator blocked SI for a planned cooldown/depressurisation'],
-    actions: ['Remember: a LOCA will now NOT start SI automatically on pressure. Unblock when the evolution is complete (SAFETY & ELECTRICAL).'],
+    actions: ['Remember: a LOCA will now NOT start SI automatically on pressure. Unblock when the evolution is complete (SAFETY SYSTEMS & ELECTRICAL).'],
   },
 };
 
@@ -412,12 +414,12 @@ for (let n = 1; n <= 4; n++) {
   H[`RCP${n}_TRIP`] = {
     meaning: `Reactor coolant pump ${n} has stopped. Its loop flow reverses and the other pumps carry the core.`,
     causes: ['Electrical fault', 'High bearing temperature or vibration', 'Loss of component cooling', 'Operator stop', 'Loss of offsite power'],
-    actions: ['Above P-8 (48 %) this trips the reactor; between P-7 and P-8 reduce power below ~48 % (TURBINE/GENERATOR).', 'Restart the pump only after the cause is fixed (RCS/RCPs).'],
+    actions: ['Above P-8 (48 %) this trips the reactor; between P-7 and P-8 reduce power below ~48 % (TURBINE / GENERATOR).', 'Restart the pump only after the cause is fixed (REACTOR COOLANT SYSTEM).'],
   };
   H[`LOOP${n}_FLOW_LO`] = {
     meaning: `RCS loop ${n} flow is below 90 % of rated.`,
     causes: [`RCP ${n} stopped or coasting down`, 'Voids in the loop'],
-    actions: ['Verify reactor trip if above P-8 (RCS/RCPs).', 'Restart the RCP when conditions allow.'],
+    actions: ['Verify reactor trip if above P-8 (REACTOR COOLANT SYSTEM).', 'Restart the RCP when conditions allow.'],
   };
 }
 
@@ -426,7 +428,7 @@ Object.assign(H, {
   CW_FLOW_LO: {
     meaning: 'Circulating water flow to the condenser is low. The condenser cannot remove the exhaust-steam heat, so vacuum falls. The turbine trips below 20 in.Hg and the steam dumps block below 22 in.Hg.',
     causes: ['A circulating water pump tripped', 'Too few CW pumps for the turbine load', 'Loss of offsite power'],
-    actions: ['Start another CIRC WATER PUMP (FEEDWATER & STEAM DUMP).', 'If vacuum keeps falling, reduce turbine load (TURBINE/GENERATOR).', 'Run 3 CW pumps above ~60 % load.'],
+    actions: ['Start another CW PUMP (CIRC WATER / COND VACUUM aux panel).', 'If vacuum keeps falling, reduce turbine load (TURBINE / GENERATOR).', 'Run 3 CW pumps above ~60 % load.'],
   },
   HOTWELL_LEVEL: {
     meaning: 'The condenser hotwell level is outside its normal band. The condensate pumps trip if the hotwell runs dry.',
@@ -436,107 +438,107 @@ Object.assign(H, {
   MFP_SUCTION_LO: {
     meaning: 'Main feed pump suction pressure is low (below 200 psig). Below 100 psig the running MFPs trip after about 15 s.',
     causes: ['Too few condensate pumps running for the feed flow (each carries ~60 % of full flow)', 'Condensate pump trip'],
-    actions: ['Start another CONDENSATE PUMP (FEEDWATER & STEAM DUMP).', 'Reduce load if no pump is available.'],
+    actions: ['Start another COND PUMP (CONDENSATE / FW HEATERS aux panel).', 'Reduce load if no pump is available.'],
   },
   FW_HTRS_OOS: {
     meaning: 'Feedwater heaters are out of service. Feedwater enters the SGs cold, so the reactor must make more heat for the same steam. Expect thermal power above electrical output and possible overpower.',
-    causes: ['FW HEATERS switch OFF'],
-    actions: ['Put the FEEDWATER HEATERS in service (FEEDWATER & STEAM DUMP).', 'Before taking heaters out at power, reduce load by about 10 %.'],
+    causes: ['FW HEATERS switch OUT'],
+    actions: ['Put FW HEATERS switch to IN (CONDENSATE / FW HEATERS aux panel).', 'Before taking heaters out at power, reduce load by about 10 %.'],
   },
   TURB_ECCENTRIC: {
     meaning: 'The turbine rotor is bowed. It sat stationary while hot without the turning gear, and it will vibrate badly when rolled.',
     causes: ['Turning gear disengaged with the turbine stopped'],
-    actions: ['Engage the TURNING GEAR and leave it until eccentricity is normal (about 20–30 min) before rolling (TURBINE/GENERATOR).'],
+    actions: ['Engage the TURNING GEAR and leave it until eccentricity is normal (about 20–30 min) before rolling (TURBINE / GENERATOR).'],
   },
   TURB_DIFF_EXP: {
     meaning: 'Turbine differential expansion is high. The rotor is much colder than the steam (it is heating faster than the casing), and blade rubs and vibration follow.',
     causes: ['Rolling to high speed or loading before the rotor warmed up'],
-    actions: ['Lower the SPEED TARGET to 500 rpm and soak until rotor temperature approaches steam temperature (TURBINE/GENERATOR).', 'Load the unit more slowly.'],
+    actions: ['Lower SPEED SETPT RPM to 500 and soak until rotor temperature approaches steam temperature (TURBINE / GENERATOR).', 'Load the unit more slowly.'],
   },
   TURB_CRIT_SPEED: {
     meaning: 'The turbine is dwelling in its critical-speed band (1000–1300 rpm), where the rotor resonates and vibration builds quickly.',
     causes: ['Speed target set inside the band', 'Acceleration rate too low'],
-    actions: ['Set the SPEED TARGET above 1300 (normally 1800 rpm) with an acceleration of at least 200 rpm/min (TURBINE/GENERATOR).'],
+    actions: ['Set SPEED SETPT RPM above 1300 (normally 1800) with ACCEL RPM/MIN of at least 200 (TURBINE / GENERATOR).'],
   },
   TURN_GEAR_OFF: {
     meaning: 'The turbine is stopped and the turning gear is not engaged. A hot rotor will start to bow.',
     causes: ['TURNING GEAR switch off'],
-    actions: ['Engage the TURNING GEAR (TURBINE/GENERATOR).'],
+    actions: ['Engage the TURNING GEAR (TURBINE / GENERATOR).'],
   },
   GEN_FIELD_OFF: {
     meaning: 'The turbine is at speed but the generator is not excited, so there is no terminal voltage and the unit cannot be synchronised.',
     causes: ['Field breaker open (normal before synchronising)'],
-    actions: ['Close the GEN FIELD BREAKER, then adjust the VOLTAGE SETPOINT to match grid voltage (TURBINE/GENERATOR).'],
+    actions: ['Press FIELD CLOSE, then adjust the VOLTAGE SETPT KV knob until GEN KV matches GRID KV (TURBINE / GENERATOR).'],
   },
   GEN_PROTECTION: {
     meaning: 'Generator protection tripped the unit. The breaker was closed out of phase or with a voltage mismatch, which caused a huge torque transient and damaged the generator.',
     causes: ['Breaker closed with the synchroscope away from 12 o\'clock', 'Terminal and grid voltage not matched'],
     actions: [
-      'Next time, set the speed target slightly above 1800 (1801–1803 rpm) so the synchroscope turns slowly clockwise (TURBINE/GENERATOR).',
-      'Match terminal kV to grid kV with the VOLTAGE SETPOINT.',
+      'Next time, set the speed target slightly above 1800 (1801–1803 rpm) so the synchroscope turns slowly clockwise (TURBINE / GENERATOR).',
+      'Match terminal kV to grid kV with the VOLTAGE SETPT KV knob.',
       'Close the breaker only when the needle is within about ±10° of 12 o\'clock.',
     ],
   },
   GEN_MVAR: {
     meaning: 'Generator reactive power is near its capability limit (over- or under-excited).',
     causes: ['Voltage setpoint far from grid voltage'],
-    actions: ['Move the VOLTAGE SETPOINT toward grid voltage (TURBINE/GENERATOR).'],
+    actions: ['Move the VOLTAGE SETPT KV knob toward GRID KV (TURBINE / GENERATOR).'],
   },
   HOUSE_ON_SAT: {
     meaning: 'Plant auxiliary loads are still fed from the startup transformer (offsite) while the generator is on line.',
     causes: ['House loads not transferred after synchronising'],
-    actions: ['Press HOUSE LOADS → UAT (SAFETY & ELECTRICAL).'],
+    actions: ['Press XFER TO UAT (ELECTRICAL DISTRIBUTION aux panel).'],
   },
   CCW_FLOW_LO: {
     meaning: 'No component cooling water flow. RCP bearings and thermal barriers, the letdown heat exchanger and other coolers have lost their cooling.',
     causes: ['CCW pump trip', 'Loss of power to the CCW pumps'],
     actions: [
-      'Start the standby CCW PUMP (SAFETY & ELECTRICAL).',
-      'Watch RCP bearing temperatures. Trip any RCP above 195 °F, because bearings fail around 230 °F (RCS/RCPs).',
-      'Keep RCP seal injection at about 32 gpm (CVCS/BORON).',
+      'Start the standby CCW PUMP (COMPONENT COOLING / SERVICE WTR aux panel).',
+      'Watch RCP bearing temperatures. Trip any RCP above 195 °F, because bearings fail around 230 °F (REACTOR COOLANT SYSTEM).',
+      'Keep RCP seal injection at about 32 gpm (CVCS / BORON CONTROL).',
     ],
   },
   CCW_TEMP_HI: {
     meaning: 'Component cooling water temperature is high (above 105 °F).',
     causes: ['Service water pump off', 'Unusually high heat load'],
-    actions: ['Start a second SERVICE WATER PUMP (SAFETY & ELECTRICAL).', 'Check RCP bearing temperatures (RCS/RCPs).'],
+    actions: ['Start a second SW PUMP (COMPONENT COOLING / SERVICE WTR aux panel).', 'Check RCP bearing temperatures (REACTOR COOLANT SYSTEM).'],
   },
   SW_FLOW_LO: {
     meaning: 'No service water flow. Nothing is cooling the CCW heat exchangers, so CCW temperature will climb.',
     causes: ['Service water pump trip or switched off'],
-    actions: ['Start a SERVICE WATER PUMP (SAFETY & ELECTRICAL).'],
+    actions: ['Start a SW PUMP (COMPONENT COOLING / SERVICE WTR aux panel).'],
   },
   SEAL_INJ_LO: {
     meaning: 'RCP seal injection flow is low. Without it (and without CCW to the thermal barriers), hot reactor coolant reaches the seals and they fail.',
     causes: ['Seal injection throttled', 'Charging pumps unavailable'],
-    actions: ['Raise SEAL INJECTION to about 32 gpm (8 gpm per pump) (CVCS/BORON).', 'Ensure CCW is running (SAFETY & ELECTRICAL).'],
+    actions: ['Raise the SEAL INJ GPM knob to about 32 (8 gpm per pump) (CVCS / BORON CONTROL).', 'Ensure CCW is running (COMPONENT COOLING / SERVICE WTR aux panel).'],
   },
   LD_HX_TEMP_HI: {
     meaning: 'Letdown heat exchanger outlet temperature is high. The ion-exchange resins are damaged above about 140 °F.',
     causes: ['Loss of CCW', 'High letdown flow'],
-    actions: ['Restore CCW flow (SAFETY & ELECTRICAL).', 'Isolate letdown if temperature keeps rising (CVCS/BORON).'],
+    actions: ['Restore CCW flow (COMPONENT COOLING / SERVICE WTR aux panel).', 'Isolate letdown if temperature keeps rising (CVCS / BORON CONTROL).'],
   },
   MAKEUP_BATCH: {
     meaning: 'A boron dilution or boration batch is in progress. It stops automatically when the batch integrator reaches its setpoint.',
-    causes: ['MAKEUP BATCH START pressed'],
-    actions: ['Watch Tavg and startup rate while it runs (REACTOR CONTROL).', 'Press MAKEUP BATCH STOP to abort (CVCS/BORON).'],
+    causes: ['BATCH START pressed'],
+    actions: ['Watch Tavg and startup rate while it runs (REACTOR CONTROL).', 'Press BATCH STOP to abort (CVCS / BORON CONTROL).'],
   },
   DG_OVERLOAD: {
     meaning: 'An emergency diesel generator is loaded beyond its rating.',
     causes: ['Too many loads started on the safety bus during a loss of offsite power'],
-    actions: ['Stop non-essential loads, such as the second CCW or SW pump or pressurizer heaters (SAFETY & ELECTRICAL).'],
+    actions: ['Stop non-essential loads, such as the second CCW or SW pump (COMPONENT COOLING / SERVICE WTR aux panel) or pressurizer backup heaters (PRESSURIZER).'],
   },
 });
 for (let n = 1; n <= 4; n++) {
   H[`RCP${n}_BRG_TEMP`] = {
     meaning: `RCP ${n} motor or pump bearing temperature is above 195 °F. Around 230 °F the bearing fails and the shaft seizes (locked rotor).`,
     causes: ['Loss of component cooling water', 'High CCW temperature'],
-    actions: ['Restore CCW flow (SAFETY & ELECTRICAL: CCW PUMP).', `If the temperature keeps rising, stop RCP ${n} (RCS/RCPs). Above P-8, trip the reactor first.`],
+    actions: ['Restore CCW flow (CCW PUMP A/B, COMPONENT COOLING / SERVICE WTR aux panel).', `If the temperature keeps rising, stop RCP ${n} (REACTOR COOLANT SYSTEM). Above P-8, trip the reactor first.`],
   };
   H[`RCP${n}_SEAL`] = {
     meaning: `RCP ${n} #1 seal leak-off is high. The seal is overheating or failing, and reactor coolant is escaping to containment.`,
     causes: ['No seal injection and no CCW to the thermal barrier', 'Seal damage'],
-    actions: ['Restore SEAL INJECTION (CVCS/BORON) and CCW (SAFETY & ELECTRICAL).', `Stop RCP ${n} to reduce leakage (RCS/RCPs).`, 'Treat a failed seal as a small LOCA. Keep pressurizer level up with charging.'],
+    actions: ['Restore SEAL INJ (CVCS / BORON CONTROL) and CCW (COMPONENT COOLING / SERVICE WTR aux panel).', `Stop RCP ${n} to reduce leakage (REACTOR COOLANT SYSTEM).`, 'Treat a failed seal as a small LOCA. Keep pressurizer level up with charging.'],
   };
 }
 

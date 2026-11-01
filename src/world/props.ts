@@ -519,9 +519,9 @@ export function furnish(kit: PanelKit, scene: THREE.Scene, colliders: Collider[]
   /* ---------- right wall: filing cabinets, fire panel, door, cooler, coat rack ---------- */
   {
     const X = R.x1;
-    for (let i = 0; i < 4; i++) filingCabinet(c, X - 0.32, 0.55 + i * 0.48, -Math.PI / 2);
-    B.add(rbox(0.3, 0.08, 0.3, 0.01), T(X - 0.3, 1.36, 0.8), 0x9a2a1e); // stuff on top
-    binderRow(B, T(X - 0.32, 1.32, 1.3, Math.PI / 2), 5);
+    for (let i = 0; i < 3; i++) filingCabinet(c, X - 0.32, 1.45 + i * 0.48, -Math.PI / 2);
+    B.add(rbox(0.3, 0.08, 0.3, 0.01), T(X - 0.3, 1.36, 1.6), 0x9a2a1e); // stuff on top
+    binderRow(B, T(X - 0.32, 1.32, 2.15, Math.PI / 2), 4);
     // fire alarm panel
     B.add(rbox(0.12, 0.8, 0.6, 0.02, 2), T(X - 0.06, 1.5, 3.3), 0xa01c14);
     kit.staticDraw(T(X - 0.121, 1.55, 3.3, -Math.PI / 2), 0.5, 0.62, 400, (ctx, r) => firePanel(ctx, r));
