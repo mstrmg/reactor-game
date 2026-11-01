@@ -152,8 +152,13 @@ export class Player {
       it.holdStart?.(button === 0 ? 1 : -1);
       this.held = { it, button, repeatT: 0 };
     } else if (it.kind === 'knob') {
-      (button === 0 ? it.primary : it.secondary)?.();
-      this.held = { it, button, repeatT: 0.4 };
+      if ((this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && it.wheel) {
+        // Shift + click = one coarse step (no auto-repeat)
+        it.wheel(button === 0 ? 1 : -1, true);
+      } else {
+        (button === 0 ? it.primary : it.secondary)?.();
+        this.held = { it, button, repeatT: 0.4 };
+      }
     } else {
       (button === 0 ? it.primary : it.secondary ?? (it.kind === 'button' ? undefined : undefined))?.();
     }

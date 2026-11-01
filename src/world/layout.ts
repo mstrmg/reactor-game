@@ -88,24 +88,37 @@ export function buildLayout(kit: PanelKit, sim: ReactorSimApi): LayoutResult {
   kit.meter(S1, 'v', -0.45, 1.74, { title: 'CHARGING FLOW', unit: 'GPM', min: 0, max: 200, ticks: [0, 50, 100, 150, 200], get: (s) => s.chargingFlowGpm });
   kit.meter(S1, 'v', -0.25, 1.74, { title: 'LETDOWN FLOW', unit: 'GPM', min: 0, max: 160, ticks: [0, 40, 80, 120, 160], get: (s) => s.letdownFlowGpm });
   kit.meter(S1, 'v', -0.05, 1.74, { title: 'PZR LEVEL', unit: '% (RED=PROG)', min: 0, max: 100, get: (s) => s.przLevel, get2: (s) => s.przLevelProgram, zones: [[0, 17, '#c82020'], [92, 100, '#c82020']] });
-  kit.lamp(S1, 'v', 0.25, 1.8, { title: 'DILUTE IN\nPROGRESS', color: 'amber', get: () => C().makeupMode === 'dilute' && C().makeupRateGpm > 0 });
-  kit.lamp(S1, 'v', 0.45, 1.8, { title: 'BORATE IN\nPROGRESS', color: 'amber', get: () => C().makeupMode === 'borate' && C().makeupRateGpm > 0 });
-  kit.lamp(S1, 'v', 0.65, 1.8, { title: 'LETDOWN\nISOLATED', color: 'red', get: (s) => C().letdownIsolated || s.letdownFlowGpm < 1 });
-  kit.lamp(S1, 'v', 0.85, 1.8, { title: 'CHARGING\nIN MANUAL', color: 'white', get: () => C().chargingMode === 'manual' });
-  kit.readout(S1, 'v', 0.35, 1.58, { title: 'MAKEUP RATE GPM', get: () => fmt(C().makeupRateGpm, 0), color: 'amber', unit: 'gpm' });
-  kit.readout(S1, 'v', 0.7, 1.58, { title: 'CHG DEMAND %', get: () => fmt(C().chargingFlowDemand, 0), color: 'amber', unit: '%' });
+  kit.vmeter(S1, 'v', 0.09, 1.75, { title: 'RCP SEAL INJECTION', unit: 'GPM', min: 0, max: 40, ticks: [0, 10, 20, 30, 40], get: (s) => s.bop?.rcpAux.sealInjectionGpm ?? 0, zones: [[0, 20, '#c82020']], fmt: (v) => v.toFixed(1) }, 'SEAL INJ');
+  kit.vmeter(S1, 'v', 0.165, 1.75, { title: 'LETDOWN HX OUTLET TEMP', unit: '°F', min: 50, max: 300, ticks: [50, 100, 150, 200, 250, 300], get: (s) => s.bop?.letdownHxOutletTempF ?? 0, zones: [[145, 300, '#e0b020']], fmt: (v) => v.toFixed(0) }, 'LD HX °F');
+  kit.lamp(S1, 'v', 0.32, 1.83, { title: 'DILUTE IN\nPROGRESS', color: 'amber', get: (s) => C().makeupMode === 'dilute' && C().makeupRateGpm > 0 && (!(C().makeupBatchGallons ?? 0) || !!s.bop?.makeupBatch.active) });
+  kit.lamp(S1, 'v', 0.47, 1.83, { title: 'BORATE IN\nPROGRESS', color: 'amber', get: (s) => C().makeupMode === 'borate' && C().makeupRateGpm > 0 && (!(C().makeupBatchGallons ?? 0) || !!s.bop?.makeupBatch.active) });
+  kit.lamp(S1, 'v', 0.62, 1.83, { title: 'BATCH IN\nPROGRESS', color: 'white', get: (s) => !!s.bop?.makeupBatch.active });
+  kit.lamp(S1, 'v', 0.77, 1.83, { title: 'LETDOWN\nISOLATED', color: 'red', get: (s) => C().letdownIsolated || s.letdownFlowGpm < 1 });
+  kit.lamp(S1, 'v', 0.92, 1.83, { title: 'CHARGING\nIN MANUAL', color: 'white', get: () => C().chargingMode === 'manual' });
+  kit.readout(S1, 'v', 0.32, 1.62, { title: 'MAKEUP RATE GPM', get: () => fmt(C().makeupRateGpm, 0), color: 'amber', unit: 'gpm' });
+  kit.readout(S1, 'v', 0.52, 1.62, { title: 'BATCH SETPT GAL', get: () => fmt(C().makeupBatchGallons ?? 0, 0), color: 'amber', unit: 'gal (0 = continuous)' });
+  kit.readout(S1, 'v', 0.72, 1.62, { title: 'BATCH DELIVERED', get: (s) => fmt(s.bop?.makeupBatch.deliveredGal ?? 0, 0), color: 'green', unit: 'gal' });
+  kit.readout(S1, 'v', 0.92, 1.62, { title: 'CHG DEMAND %', get: () => fmt(C().chargingFlowDemand, 0), color: 'amber', unit: '%' });
+  kit.readout(S1, 'v', 0.52, 1.45, { title: 'SEAL INJ GPM', get: (s) => fmt(s.bop?.rcpAux.sealInjectionGpm ?? 0, 1), unit: 'gpm (normal 32)' });
+  kit.readout(S1, 'v', 0.72, 1.45, { title: 'LD HX OUT °F', get: (s) => fmt(s.bop?.letdownHxOutletTempF ?? 0, 0), unit: '°F' });
   kit.readout(S1, 'v', -0.45, 1.5, { title: 'CHARGING GPM', get: (s) => fmt(s.chargingFlowGpm, 1), unit: 'gpm' });
   kit.readout(S1, 'v', -0.15, 1.5, { title: 'LETDOWN GPM', get: (s) => fmt(s.letdownFlowGpm, 1), unit: 'gpm' });
   kit.label(S1, 'v', 0.0, 1.27, 'DILUTE: ADDS +REACTIVITY · BORATE: ADDS −REACTIVITY', 0.9, 0.03, 'yellow');
 
-  kit.groupBox(S1, 'b', -1.0, 0.08, -0.05, 0.6, 'REACTOR MAKEUP');
+  kit.groupBox(S1, 'b', -1.02, 0.06, -0.06, 0.62, 'REACTOR MAKEUP / BATCH INTEGRATOR');
   const mk = ['off', 'auto', 'dilute', 'borate'] as const;
-  kit.switch(S1, 'b', -0.75, 0.33, { id: 'MAKEUP_MODE', title: 'MAKEUP MODE', positions: ['OFF', 'AUTO', 'DIL', 'BOR'], get: (c) => mk.indexOf(c.makeupMode), set: (c, i) => (c.makeupMode = mk[i]) });
-  kit.knob(S1, 'b', -0.32, 0.33, { id: 'MAKEUP_RATE', title: 'MAKEUP RATE GPM', min: 0, max: 120, step: 1, coarse: 10, get: (c) => c.makeupRateGpm, set: (c, v) => (c.makeupRateGpm = v), fmt: (v) => `${v.toFixed(0)} gpm`, ticks: ['0', '60', '120'] });
-  kit.groupBox(S1, 'b', 0.05, 0.08, 1.0, 0.6, 'CHARGING / LETDOWN');
-  kit.switch(S1, 'b', 0.22, 0.33, { id: 'CHG_MODE', title: 'CHARGING CTRL', positions: ['MAN', 'AUTO'], get: (c) => (c.chargingMode === 'auto' ? 1 : 0), set: (c, i) => (c.chargingMode = i ? 'auto' : 'manual') });
-  kit.knob(S1, 'b', 0.52, 0.33, { id: 'CHG_DEMAND', title: 'CHARGING DEMAND', min: 0, max: 100, step: 1, coarse: 10, get: (c) => c.chargingFlowDemand, set: (c, v) => (c.chargingFlowDemand = v), fmt: (v) => `${v.toFixed(0)} %`, ticks: ['0', '50', '100'] });
-  kit.switch(S1, 'b', 0.82, 0.33, { id: 'LETDOWN', title: 'LETDOWN ISOL', positions: ['ISOL', 'NORM'], get: (c) => (c.letdownIsolated ? 0 : 1), set: (c, i) => (c.letdownIsolated = i === 0) });
+  kit.switch(S1, 'b', -0.86, 0.42, { id: 'MAKEUP_MODE', title: 'MAKEUP MODE', positions: ['OFF', 'AUTO', 'DIL', 'BOR'], get: (c) => mk.indexOf(c.makeupMode), set: (c, i) => (c.makeupMode = mk[i]) });
+  kit.knob(S1, 'b', -0.55, 0.42, { id: 'MAKEUP_RATE', title: 'MAKEUP RATE GPM', min: 0, max: 120, step: 1, coarse: 10, get: (c) => c.makeupRateGpm, set: (c, v) => (c.makeupRateGpm = v), fmt: (v) => `${v.toFixed(0)} gpm`, ticks: ['0', '60', '120'] });
+  kit.knob(S1, 'b', -0.25, 0.42, { id: 'MAKEUP_BATCH_GAL', title: 'BATCH GALLONS', min: 0, max: 5000, step: 10, coarse: 100, get: (c) => c.makeupBatchGallons ?? 0, set: (c, v) => (c.makeupBatchGallons = v), fmt: (v) => (v > 0 ? `${v.toFixed(0)} gal` : '0 = continuous'), ticks: ['0', '2500', '5000'] });
+  kit.button(S1, 'b', -0.55, 0.15, { id: 'MAKEUP_BATCH_START', title: 'BATCH START', hover: 'MAKEUP BATCH START', press: 'MAKEUP_BATCH_START', color: 0x8c1a14, lamp: (s) => !!s.bop?.makeupBatch.active, lampColor: 'red' });
+  kit.button(S1, 'b', -0.27, 0.15, { id: 'MAKEUP_BATCH_STOP', title: 'BATCH STOP', hover: 'MAKEUP BATCH STOP', press: 'MAKEUP_BATCH_STOP', color: 0x1d5a2a, lamp: (s) => !s.bop?.makeupBatch.active, lampColor: 'green' });
+  kit.label(S1, 'b', -0.86, 0.17, 'BATCH: SELECT DIL/BOR,\nSET GAL & RATE, START.\n0 GAL = CONTINUOUS', 0.2, 0.06, 'white');
+  kit.groupBox(S1, 'b', 0.06, 0.06, 1.02, 0.62, 'CHARGING / LETDOWN / SEAL INJECTION');
+  kit.switch(S1, 'b', 0.2, 0.42, { id: 'CHG_MODE', title: 'CHARGING CTRL', positions: ['MAN', 'AUTO'], get: (c) => (c.chargingMode === 'auto' ? 1 : 0), set: (c, i) => (c.chargingMode = i ? 'auto' : 'manual') });
+  kit.knob(S1, 'b', 0.5, 0.42, { id: 'CHG_DEMAND', title: 'CHARGING DEMAND', min: 0, max: 100, step: 1, coarse: 10, get: (c) => c.chargingFlowDemand, set: (c, v) => (c.chargingFlowDemand = v), fmt: (v) => `${v.toFixed(0)} %`, ticks: ['0', '50', '100'] });
+  kit.switch(S1, 'b', 0.82, 0.42, { id: 'LETDOWN', title: 'LETDOWN ISOL', positions: ['ISOL', 'NORM'], get: (c) => (c.letdownIsolated ? 0 : 1), set: (c, i) => (c.letdownIsolated = i === 0) });
+  kit.knob(S1, 'b', 0.5, 0.17, { id: 'SEAL_INJECTION', title: 'SEAL INJ GPM', min: 0, max: 40, step: 0.5, coarse: 4, get: (c) => c.sealInjectionGpm ?? 32, set: (c, v) => (c.sealInjectionGpm = v), fmt: (v) => `${v.toFixed(1)} gpm`, ticks: ['0', '20', '40'], detents: [32] });
+  kit.label(S1, 'b', 0.82, 0.17, 'SEAL INJ NORMAL 32 GPM\n(8 GPM / RCP). < 20 GPM\nNEEDS CCW TO SEALS', 0.22, 0.06, 'white');
 
   /* ============ 2: PRESSURIZER ============ */
   kit.meter(S2, 'v', -0.85, 1.72, { title: 'PZR PRESSURE', unit: 'PSIG', min: 1700, max: 2500, size: 0.19, ticks: [1700, 1900, 2100, 2300, 2500], minor: 3, get: (s) => s.rcsPressure, zones: [[1700, 1865, '#c82020'], [2385, 2500, '#c82020']], fmt: (v) => v.toFixed(0) });
@@ -134,10 +147,13 @@ export function buildLayout(kit: PanelKit, sim: ReactorSimApi): LayoutResult {
   /* ============ 3: RCS ============ */
   for (let L = 0; L < 4; L++) {
     const cu = -0.81 + L * 0.54;
-    kit.groupBox(S3, 'v', cu - 0.135, 1.53, cu + 0.135, 1.88, `LOOP ${loopTitle[L]}`);
-    kit.vmeter(S3, 'v', cu - 0.075, 1.69, { title: `LOOP ${L + 1} THOT`, unit: '°F', min: 500, max: 650, ticks: [500, 550, 600, 650], get: (s) => s.loops[L].tHot, zones: [[620, 650, '#c82020']] }, 'THOT');
-    kit.vmeter(S3, 'v', cu, 1.69, { title: `LOOP ${L + 1} TCOLD`, unit: '°F', min: 500, max: 650, ticks: [500, 550, 600, 650], get: (s) => s.loops[L].tCold }, 'TCOLD');
-    kit.vmeter(S3, 'v', cu + 0.075, 1.69, { title: `LOOP ${L + 1} FLOW`, unit: '%', min: 0, max: 120, ticks: [0, 40, 80, 120], get: (s) => s.loops[L].flow, zones: [[0, 90, '#e0b020']] }, 'FLOW');
+    kit.groupBox(S3, 'v', cu - 0.218, 1.53, cu + 0.218, 1.89, `LOOP ${loopTitle[L]}  ·  RCP ${loopTitle[L]}`);
+    kit.vmeter(S3, 'v', cu - 0.175, 1.69, { title: `LOOP ${L + 1} THOT`, unit: '°F', min: 500, max: 650, ticks: [500, 550, 600, 650], get: (s) => s.loops[L].tHot, zones: [[620, 650, '#c82020']] }, 'THOT');
+    kit.vmeter(S3, 'v', cu - 0.105, 1.69, { title: `LOOP ${L + 1} TCOLD`, unit: '°F', min: 500, max: 650, ticks: [500, 550, 600, 650], get: (s) => s.loops[L].tCold }, 'TCOLD');
+    kit.vmeter(S3, 'v', cu - 0.035, 1.69, { title: `LOOP ${L + 1} FLOW`, unit: '%', min: 0, max: 120, ticks: [0, 40, 80, 120], get: (s) => s.loops[L].flow, zones: [[0, 90, '#e0b020']] }, 'FLOW');
+    kit.vmeter(S3, 'v', cu + 0.035, 1.69, { title: `RCP ${L + 1} BEARING TEMP`, unit: '°F', min: 50, max: 300, ticks: [50, 100, 150, 200, 250, 300], get: (s) => s.bop?.rcpAux.bearingTempF[L] ?? 0, zones: [[195, 230, '#e0b020'], [230, 300, '#c82020']], fmt: (v) => v.toFixed(0) }, 'BRG °F');
+    kit.vmeter(S3, 'v', cu + 0.105, 1.69, { title: `RCP ${L + 1} #1 SEAL TEMP`, unit: '°F', min: 0, max: 600, ticks: [0, 200, 400, 600], get: (s) => s.bop?.rcpAux.sealTempF[L] ?? 0, zones: [[235, 600, '#e0b020']], fmt: (v) => v.toFixed(0) }, 'SEAL °F');
+    kit.vmeter(S3, 'v', cu + 0.175, 1.69, { title: `RCP ${L + 1} #1 SEAL LEAKOFF`, unit: 'GPM', min: 0.1, max: 100, log: true, get: (s) => s.bop?.rcpAux.sealLeakoffGpm[L] ?? 0, zones: [[8, 100, '#e0b020']], fmt: (v) => v.toFixed(2), tickFmt: (v) => (v < 1 ? '.1' : String(v)) }, 'LKOFF');
   }
   const rcsRead: [string, (s: PlantState) => string, 'red' | 'green' | 'amber'][] = [
     ['TAVG °F', (s) => fmt(s.tAvg, 1), 'red'],
@@ -151,8 +167,9 @@ export function buildLayout(kit: PanelKit, sim: ReactorSimApi): LayoutResult {
   for (let L = 0; L < 4; L++) {
     const cu = -0.75 + L * 0.5;
     kit.groupBox(S3, 'b', cu - 0.2, 0.08, cu + 0.2, 0.6, `RCP ${loopTitle[L]}`);
-    kit.lamp(S3, 'b', cu - 0.08, 0.49, { title: 'RUN', hover: `RCP ${L + 1} RUNNING`, color: 'red', get: (s) => s.loops[L].rcpRunning });
-    kit.lamp(S3, 'b', cu + 0.08, 0.49, { title: 'STOP', hover: `RCP ${L + 1} STOPPED`, color: 'green', get: (s) => !s.loops[L].rcpRunning });
+    kit.lamp(S3, 'b', cu - 0.12, 0.49, { title: 'RUN', hover: `RCP ${L + 1} RUNNING`, color: 'red', get: (s) => s.loops[L].rcpRunning });
+    kit.lamp(S3, 'b', cu, 0.49, { title: 'STOP', hover: `RCP ${L + 1} STOPPED`, color: 'green', get: (s) => !s.loops[L].rcpRunning });
+    kit.lamp(S3, 'b', cu + 0.12, 0.49, { title: 'SEIZED', hover: `RCP ${L + 1} BEARING FAILED / LOCKED ROTOR`, color: 'amber', get: (s) => !!s.bop?.rcpAux.seized[L], flash: true });
     kit.button(S3, 'b', cu - 0.08, 0.2, { id: `RCP_START_${L}`, title: 'START', hover: `RCP ${L + 1} START`, press: `RCP_START_${L}`, color: 0x8c1a14 });
     kit.button(S3, 'b', cu + 0.08, 0.2, { id: `RCP_STOP_${L}`, title: 'STOP', hover: `RCP ${L + 1} STOP`, press: `RCP_STOP_${L}`, color: 0x1d5a2a });
   }
@@ -264,10 +281,12 @@ export function buildLayout(kit: PanelKit, sim: ReactorSimApi): LayoutResult {
     kit.vmeter(S7, 'v', cu + 0.1, 1.7, { title: `SG ${sgTitle[g]} FEED FLOW`, unit: '%', min: 0, max: 120, ticks: [0, 40, 80, 120], get: (s) => s.loops[g].feedFlow }, 'FW FL');
     kit.readout(S7, 'v', cu - 0.075, 1.36, { title: 'FRV POS %', get: (s) => fmt(s.loops[g].feedValvePos * 100, 0), w: 0.1, color: 'amber', unit: '%' });
     kit.readout(S7, 'v', cu + 0.075, 1.36, { title: 'WR LEVEL %', get: (s) => fmt(s.loops[g].sgLevelWide, 0), w: 0.1, color: 'green', unit: '%' });
-    kit.groupBox(S7, 'b', cu - 0.22, 0.06, cu + 0.22, 0.62, `S/G ${sgTitle[g]} FEED REG VALVE`);
+    kit.groupBox(S7, 'b', cu - 0.23, 0.05, cu + 0.23, 0.62, `S/G ${sgTitle[g]} FRV / MSIV`);
     kit.switch(S7, 'b', cu - 0.1, 0.42, { id: `FRV_MODE_${g}`, title: 'FRV MODE', positions: ['MAN', 'AUTO'], get: (c) => (c.feedMode[g] === 'auto' ? 1 : 0), set: (c, i) => (c.feedMode[g] = i ? 'auto' : 'manual'), size: 0.11 });
     kit.knob(S7, 'b', cu + 0.1, 0.42, { id: `FRV_DEMAND_${g}`, title: 'FRV DEMAND', min: 0, max: 1, step: 0.01, coarse: 0.1, get: (c) => c.feedValveDemand[g], set: (c, v) => (c.feedValveDemand[g] = v), fmt: (v) => `${(v * 100).toFixed(0)} %`, ticks: ['0', '50', '100'] });
-    kit.readout(S7, 'b', cu, 0.16, { title: 'AFW FLOW GPM', get: (s) => fmt(s.loops[g].auxFeedFlow, 0), w: 0.12, unit: 'gpm' });
+    kit.readout(S7, 'v', cu, 1.2, { title: `AFW FLOW GPM`, get: (s) => fmt(s.loops[g].auxFeedFlow, 0), w: 0.12, unit: 'gpm' });
+    kit.button(S7, 'b', cu - 0.13, 0.15, { id: `MSIV_CLOSE_${g}`, title: 'MSIV CLOSE', hover: `SG ${sgTitle[g]} MSIV CLOSE`, press: `MSIV_CLOSE_${g}`, color: 0x1d5a2a, lamp: (s) => !(s.ext?.msivOpen?.[g] ?? true), lampColor: 'green' });
+    kit.button(S7, 'b', cu + 0.07, 0.15, { id: `MSIV_OPEN_${g}`, title: 'MSIV OPEN', hover: `SG ${sgTitle[g]} MSIV OPEN`, press: `MSIV_OPEN_${g}`, color: 0x8c1a14, lamp: (s) => s.ext?.msivOpen?.[g] ?? true, lampColor: 'red' });
   }
 
   /* ============ 8: FEEDWATER & STEAM DUMP ============ */
@@ -288,6 +307,15 @@ export function buildLayout(kit: PanelKit, sim: ReactorSimApi): LayoutResult {
   kit.readout(S8, 'v', 0.9, 1.47, { title: 'DUMP DEMAND %', get: (s) => fmt(s.steamDumpDemand * 100, 0), color: 'green', unit: '%' });
   kit.lamp(S8, 'v', 0.3, 1.29, { title: 'STEAM DUMP\nARMED', color: 'amber', get: () => C().steamDumpMode !== 'off' });
   kit.lamp(S8, 'v', 0.5, 1.29, { title: 'DUMPS\nOPEN', color: 'red', get: (s) => s.steamDumpDemand > 0.02 });
+  kit.lamp(S8, 'v', 0.66, 1.29, { title: 'C-9 COND\nAVAILABLE', color: 'white', get: (s) => s.ext?.steamDumpsAvailable ?? s.condenserVacuum > 22 });
+  kit.readout(S8, 'v', 0.88, 1.29, { title: 'SG ARV SETPT PSIG', get: (s) => fmt(s.bop?.sgArvSetpointPsig ?? C().sgArvSetpointPsig ?? 0, 0), color: 'amber', unit: 'psig' });
+  kit.readout(S8, 'v', -0.88, 1.45, { title: 'MFP SUCTION PSIG', get: (s) => fmt(s.bop?.mfpSuctionPsig ?? 0, 0), unit: 'psig (MFP start > 250)' });
+  kit.readout(S8, 'v', -0.66, 1.45, { title: 'HOTWELL LEVEL %', get: (s) => fmt(s.bop?.hotwellLevelPct ?? 0, 0), color: 'green', unit: '%' });
+  kit.readout(S8, 'v', -0.44, 1.45, { title: 'FINAL FW TEMP °F', get: (s) => fmt(s.bop?.feedwaterTempF ?? 0, 0), color: 'amber', unit: '°F' });
+  kit.readout(S8, 'v', -0.22, 1.45, { title: 'COND VAC IN HG', get: (s) => fmt(s.condenserVacuum, 1), color: 'green', unit: 'in Hg' });
+  kit.lamp(S8, 'v', -0.88, 1.27, { title: 'CW PUMPS\nRUNNING', color: 'red', get: (s) => !!s.bop?.circWaterRunning.some(Boolean) });
+  kit.lamp(S8, 'v', -0.74, 1.27, { title: 'COND PUMPS\nRUNNING', color: 'red', get: (s) => !!s.bop?.condensateRunning.some(Boolean) });
+  kit.label(S8, 'v', -0.42, 1.27, 'CW / VACUUM / CONDENSATE PANELS:\nAUX BOARDS RIGHT OF TURBINE SECTION →', 0.36, 0.05, 'white');
 
   kit.groupBox(S8, 'b', -1.0, 0.06, 0.02, 0.62, 'FEED PUMPS');
   kit.button(S8, 'b', -0.78, 0.18, { id: 'MFP_A_TOGGLE', title: 'MFP A\nSTART/STOP', press: 'MFP_A_TOGGLE', color: 0x1c1c1c, lamp: (s) => s.mainFeedPumpsRunning[0], lampColor: 'red' });
@@ -295,59 +323,108 @@ export function buildLayout(kit: PanelKit, sim: ReactorSimApi): LayoutResult {
   for (let i = 0; i < 3; i++) {
     kit.switch(S8, 'b', -0.82 + i * 0.29, 0.44, { id: `AFW_${i}`, title: i < 2 ? `AFW PUMP ${i + 1}` : 'AFW PUMP 3 TD', positions: ['STOP', 'AUTO', 'START'], get: (c) => OAA.indexOf(c.auxFeedPumps[i]), set: (c, k) => (c.auxFeedPumps[i] = OAA[k]), size: 0.11 });
   }
-  kit.groupBox(S8, 'b', 0.12, 0.06, 1.0, 0.62, 'CONDENSER STEAM DUMP');
+  kit.groupBox(S8, 'b', 0.1, 0.06, 1.02, 0.62, 'CONDENSER STEAM DUMP / SG ATMOS RELIEF');
   const dm = ['off', 'tavg', 'pressure'] as const;
-  kit.switch(S8, 'b', 0.33, 0.36, { id: 'STEAM_DUMP_MODE', title: 'STEAM DUMP MODE', positions: ['OFF', 'TAVG', 'PRESS'], get: (c) => dm.indexOf(c.steamDumpMode), set: (c, i) => (c.steamDumpMode = dm[i]) });
-  kit.knob(S8, 'b', 0.72, 0.36, { id: 'STEAM_DUMP_SETPT', title: 'DUMP PRESS SETPT', min: 900, max: 1200, step: 5, coarse: 25, get: (c) => c.steamDumpPressureSetpoint, set: (c, v) => (c.steamDumpPressureSetpoint = v), fmt: (v) => `${v.toFixed(0)} psig`, ticks: ['900', '1050', '1200'] });
+  kit.switch(S8, 'b', 0.27, 0.38, { id: 'STEAM_DUMP_MODE', title: 'STEAM DUMP MODE', positions: ['OFF', 'TAVG', 'PRESS'], get: (c) => dm.indexOf(c.steamDumpMode), set: (c, i) => (c.steamDumpMode = dm[i]) });
+  kit.knob(S8, 'b', 0.56, 0.38, { id: 'STEAM_DUMP_SETPT', title: 'DUMP PRESS SETPT', min: 900, max: 1200, step: 5, coarse: 25, get: (c) => c.steamDumpPressureSetpoint, set: (c, v) => (c.steamDumpPressureSetpoint = v), fmt: (v) => `${v.toFixed(0)} psig`, ticks: ['900', '1050', '1200'] });
+  kit.knob(S8, 'b', 0.85, 0.38, { id: 'SG_ARV_SETPT', title: 'SG ARV SETPT PSIG', min: 1000, max: 1200, step: 5, coarse: 25, get: (c) => c.sgArvSetpointPsig ?? 1085, set: (c, v) => (c.sgArvSetpointPsig = v), fmt: (v) => `${v.toFixed(0)} psig`, ticks: ['1000', '1100', '1200'], detents: [1085, 1125] });
+  kit.label(S8, 'b', 0.56, 0.15, 'ARVs (ALL 4 SGs) CARRY DECAY HEAT AT 1085 · RAISE TO 1125 ONCE DUMPS AVAILABLE', 0.8, 0.03, 'white');
 
   /* ============ 9: TURBINE / GENERATOR ============ */
-  kit.meter(S9, 'v', -0.86, 1.72, { title: 'TURBINE SPEED', unit: 'RPM', min: 0, max: 2000, size: 0.18, ticks: [0, 500, 1000, 1500, 2000], get: (s) => s.turbineSpeedRpm, zones: [[1850, 1980, '#e0b020'], [1980, 2000, '#c82020']], fmt: (v) => v.toFixed(0) });
-  kit.meter(S9, 'v', -0.64, 1.72, { title: 'GENERATOR OUTPUT', unit: 'MWE', min: 0, max: 1300, size: 0.18, ticks: [0, 300, 600, 900, 1200], get: (s) => s.grossMWe, get2: (s) => s.turbineLoadMW, fmt: (v) => v.toFixed(0) });
-  // synchroscope
-  const syncFrame = surfaceFrame(S9, 'v', -0.4, 1.72, 0);
-  kit.shell.add(box(0.18, 0.18, 0.03), new THREE.Matrix4().makeTranslation(0, 0, 0.015).premultiply(syncFrame), PALETTE.bezel, { ao: false });
-  let syncAngle = 0;
-  let syncLast = -1;
-  kit.dialFree(syncFrame, 0.16, drawSyncFace, [
+  const tb = (s: PlantState) => s.bop?.turbine;
+  const gn = (s: PlantState) => s.bop?.generator;
+  // --- turbine (left half)
+  kit.groupBox(S9, 'v', -1.07, 1.6, -0.03, 1.905, 'TURBINE SUPERVISORY');
+  kit.meter(S9, 'v', -0.935, 1.745, { title: 'TURBINE SPEED', unit: 'RPM', min: 0, max: 2000, size: 0.17, ticks: [0, 500, 1000, 1500, 2000], get: (s) => s.turbineSpeedRpm, get2: (s) => tb(s)?.speedSetpointRpm ?? 0, zones: [[1000, 1300, '#e0b020'], [1850, 1980, '#e0b020'], [1980, 2000, '#c82020']], fmt: (v) => v.toFixed(0) });
+  kit.vmeter(S9, 'v', -0.78, 1.755, { title: 'HP ROTOR TEMP (RED = STEAM INLET)', unit: '°F', min: 0, max: 700, ticks: [0, 200, 400, 600], get: (s) => tb(s)?.rotorTempF ?? 0, get2: (s) => tb(s)?.steamInletTempF ?? 0, fmt: (v) => v.toFixed(0) }, 'ROTOR');
+  kit.vmeter(S9, 'v', -0.71, 1.755, { title: 'STEAM INLET TEMP', unit: '°F', min: 0, max: 700, ticks: [0, 200, 400, 600], get: (s) => tb(s)?.steamInletTempF ?? 0, fmt: (v) => v.toFixed(0) }, 'STM IN');
+  kit.vmeter(S9, 'v', -0.64, 1.755, { title: 'DIFFERENTIAL EXPANSION', unit: '% LIMIT', min: 0, max: 150, ticks: [0, 50, 100, 150], get: (s) => tb(s)?.diffExpansionPct ?? 0, zones: [[60, 100, '#e0b020'], [100, 150, '#c82020']], fmt: (v) => v.toFixed(0) }, 'DIFF EXP');
+  kit.vmeter(S9, 'v', -0.57, 1.755, { title: 'BEARING VIBRATION', unit: 'MILS', min: 0, max: 20, ticks: [0, 5, 10, 15, 20], get: (s) => tb(s)?.vibrationMils ?? 0, zones: [[7, 14, '#e0b020'], [14, 20, '#c82020']], fmt: (v) => v.toFixed(1) }, 'VIBR');
+  kit.vmeter(S9, 'v', -0.5, 1.755, { title: 'ROTOR ECCENTRICITY', unit: 'MILS', min: 0, max: 7, ticks: [0, 1, 2, 3, 4, 5, 6, 7], get: (s) => tb(s)?.eccentricityMils ?? 0, zones: [[2, 7, '#e0b020']], fmt: (v) => v.toFixed(2) }, 'ECCEN');
+  kit.lamp(S9, 'v', -0.385, 1.85, { title: 'TURBINE\nLATCHED', color: 'white', get: (s) => s.turbineLatched });
+  kit.lamp(S9, 'v', -0.255, 1.85, { title: 'TURBINE\nTRIPPED', color: 'red', get: (s) => s.turbineTripped });
+  kit.lamp(S9, 'v', -0.125, 1.85, { title: 'TURN GEAR\nENGAGED', color: 'white', get: (s) => !!tb(s)?.turningGearEngaged });
+  kit.lamp(S9, 'v', -0.385, 1.71, { title: 'CRITICAL\nSPEED BAND', color: 'amber', get: (s) => !!tb(s)?.inCriticalBand, flash: true });
+  kit.lamp(S9, 'v', -0.255, 1.71, { title: 'ROTOR\nWARM', hover: 'ROTOR WARM (within 120 °F of steam)', color: 'white', get: (s) => { const t = tb(s); return !!t && t.rotorTempF > t.steamInletTempF - 120 && t.steamInletTempF > 300; } });
+  kit.lamp(S9, 'v', -0.125, 1.71, { title: 'VIBRATION\nHIGH', color: 'amber', get: (s) => (tb(s)?.vibrationMils ?? 0) > 7, flash: true });
+  kit.readout(S9, 'v', -0.93, 1.45, { title: 'SPEED SETPT RPM', get: (s) => fmt(tb(s)?.speedSetpointRpm ?? C().turbineSpeedSetpointRpm ?? 0, 1), color: 'amber', unit: 'rpm' });
+  kit.readout(S9, 'v', -0.765, 1.45, { title: 'ACCEL RPM/MIN', get: () => fmt(C().turbineAccelRpmPerMin ?? 0, 0), color: 'amber', unit: 'rpm/min' });
+  kit.readout(S9, 'v', -0.6, 1.45, { title: 'ROTOR TEMP °F', get: (s) => fmt(tb(s)?.rotorTempF ?? 0, 0), unit: '°F' });
+  kit.readout(S9, 'v', -0.435, 1.45, { title: 'STEAM INLET °F', get: (s) => fmt(tb(s)?.steamInletTempF ?? 0, 0), unit: '°F' });
+  kit.readout(S9, 'v', -0.27, 1.45, { title: 'LOAD SETPT MW', get: () => fmt(C().turbineLoadSetpointMW, 0), color: 'amber', unit: 'MW' });
+  kit.readout(S9, 'v', -0.105, 1.45, { title: 'TURBINE LOAD MW', get: (s) => fmt(s.turbineLoadMW, 0), unit: 'MW' });
+  kit.readout(S9, 'v', -0.93, 1.27, { title: 'RAMP MW/MIN', get: () => fmt(C().turbineRampRateMWpm, 0), color: 'amber', unit: 'MW/min' });
+  kit.label(S9, 'v', -0.45, 1.27, 'WARM-UP: HOLD 500 RPM UNTIL ROTOR WITHIN 120 °F OF STEAM\nNEVER DWELL 1000–1300 RPM · ACCEL ≥ 300 RPM/MIN THROUGH IT', 0.74, 0.055, 'white');
+  // --- generator / synchronising (right half)
+  kit.groupBox(S9, 'v', 0.03, 1.6, 1.07, 1.905, 'GENERATOR / SYNCHRONIZING');
+  const syncFrame = surfaceFrame(S9, 'v', 0.14, 1.755, 0);
+  kit.shell.add(box(0.17, 0.17, 0.03), new THREE.Matrix4().makeTranslation(0, 0, 0.015).premultiply(syncFrame), PALETTE.bezel, { ao: false });
+  kit.dialFree(syncFrame, 0.15, drawSyncFace, [
     {
+      // 0 = 12 o'clock; the needle turns clockwise when the generator runs fast
       get: (s) => {
-        const now = performance.now() / 1000;
-        const dt = syncLast < 0 ? 0 : Math.min(0.1, now - syncLast);
-        syncLast = now;
-        if (s.generatorBreakerClosed) syncAngle *= 0.8;
-        else if (s.turbineSpeedRpm > 1500) {
-          const slipHz = Math.max(-2.5, Math.min(2.5, (s.turbineSpeedRpm - 1800) / 30));
-          syncAngle -= slipHz * Math.PI * 2 * dt;
-        }
-        return syncAngle;
+        const g = gn(s);
+        if (!g || s.generatorBreakerClosed || !g.fieldBreakerClosed) return 0;
+        return -g.syncPhaseDeg * DEG;
       },
-      len: 0.065,
+      len: 0.06,
       wid: 0.004,
       color: 0x111111,
     },
   ]);
-  kit.interactables.push(infoBox(syncFrame, 0.09, 0.09, 'SYNCHROSCOPE', (s) => (s.generatorBreakerClosed ? 'locked (breaker closed)' : s.turbineSpeedRpm > 1500 ? `slip ${(((s.turbineSpeedRpm - 1800) / 30) * 1).toFixed(2)} Hz — close breaker near 12 o'clock, rotating slowly FAST` : 'not in range (<1500 rpm)')));
-  kit.label(S9, 'v', -0.4, 1.6, 'SYNCHROSCOPE', 0.16, 0.022);
-  kit.readout(S9, 'v', -0.86, 1.47, { title: 'LOAD SETPOINT MW', get: () => fmt(C().turbineLoadSetpointMW, 0), color: 'amber', unit: 'MW' });
-  kit.readout(S9, 'v', -0.56, 1.47, { title: 'TURBINE LOAD MW', get: (s) => fmt(s.turbineLoadMW, 0), unit: 'MW' });
-  kit.readout(S9, 'v', -0.26, 1.47, { title: 'RAMP MW/MIN', get: () => fmt(C().turbineRampRateMWpm, 0), color: 'amber', unit: 'MW/min' });
-  kit.readout(S9, 'v', -0.56, 1.3, { title: 'GROSS MWE', get: (s) => fmt(s.grossMWe, 0), color: 'green', w: 0.16, h: 0.055, unit: 'MWe' });
-  kit.groupBox(S9, 'v', 0.05, 1.58, 1.06, 1.9, 'TURBINE / GENERATOR STATUS');
-  kit.lamp(S9, 'v', 0.18, 1.8, { title: 'TURBINE\nLATCHED', color: 'white', get: (s) => s.turbineLatched });
-  kit.lamp(S9, 'v', 0.36, 1.8, { title: 'TURBINE\nTRIPPED', color: 'red', get: (s) => s.turbineTripped });
-  kit.lamp(S9, 'v', 0.54, 1.8, { title: 'GEN BKR\nCLOSED', color: 'red', get: (s) => s.generatorBreakerClosed });
-  kit.lamp(S9, 'v', 0.72, 1.8, { title: 'GEN BKR\nOPEN', color: 'green', get: (s) => !s.generatorBreakerClosed });
-  kit.lamp(S9, 'v', 0.9, 1.8, { title: 'SYNC\nPERMISSIVE', color: 'white', get: (s) => !s.generatorBreakerClosed && Math.abs(s.turbineSpeedRpm - 1800) < 8 });
-  kit.label(S9, 'v', 0.55, 1.4, 'ROLL: LATCH → TURBINE TO 1800 RPM →\nSYNC → CLOSE GEN BKR → RAISE LOAD', 0.8, 0.07, 'white');
+  kit.interactables.push(
+    infoBox(syncFrame, 0.085, 0.085, 'SYNCHROSCOPE', (s) => {
+      const g = gn(s);
+      if (!g) return '----';
+      if (s.generatorBreakerClosed) return 'locked at 12 (breaker closed)';
+      if (!g.fieldBreakerClosed) return 'inactive — close the FIELD breaker (> 1700 rpm)';
+      return `${g.syncPhaseDeg >= 0 ? '+' : ''}${g.syncPhaseDeg.toFixed(0)}°  slip ${g.slipHz >= 0 ? '+' : ''}${g.slipHz.toFixed(3)} Hz ${g.slipHz >= 0 ? '(FAST)' : '(SLOW)'} — close bkr within ±10° of 12, turning slowly FAST`;
+    }),
+  );
+  kit.label(S9, 'v', 0.14, 1.647, 'SYNCHROSCOPE', 0.13, 0.02);
+  kit.vmeter(S9, 'v', 0.28, 1.755, { title: 'GENERATOR TERMINAL KV', unit: 'KV', min: 0, max: 30, ticks: [0, 10, 20, 30], get: (s) => gn(s)?.terminalKv ?? 0, fmt: (v) => v.toFixed(2) }, 'GEN KV');
+  kit.vmeter(S9, 'v', 0.35, 1.755, { title: 'GRID (RUNNING) KV', unit: 'KV', min: 0, max: 30, ticks: [0, 10, 20, 30], get: (s) => gn(s)?.gridKv ?? 0, fmt: (v) => v.toFixed(2) }, 'GRID KV');
+  kit.vmeter(S9, 'v', 0.42, 1.755, { title: 'SLIP (GEN − GRID)', unit: 'HZ', min: -0.5, max: 0.5, ticks: [-0.5, -0.25, 0, 0.25, 0.5], get: (s) => gn(s)?.slipHz ?? 0, fmt: (v) => (v >= 0 ? '+' : '') + v.toFixed(3) }, 'SLIP HZ');
+  kit.vmeter(S9, 'v', 0.49, 1.755, { title: 'GENERATOR MVAR', unit: 'MVAR', min: -600, max: 600, ticks: [-600, -300, 0, 300, 600], get: (s) => gn(s)?.mvar ?? 0, zones: [[-600, -450, '#e0b020'], [450, 600, '#e0b020']], fmt: (v) => v.toFixed(0) }, 'MVAR');
+  kit.vmeter(S9, 'v', 0.56, 1.755, { title: 'POWER FACTOR', unit: 'PF', min: 0.5, max: 1, ticks: [0.5, 0.75, 1], get: (s) => gn(s)?.powerFactor ?? 0, fmt: (v) => v.toFixed(3) }, 'PF');
+  kit.meter(S9, 'v', 0.69, 1.745, { title: 'GENERATOR OUTPUT', unit: 'MWE', min: 0, max: 1300, size: 0.15, ticks: [0, 300, 600, 900, 1200], get: (s) => s.grossMWe, get2: (s) => s.turbineLoadMW, fmt: (v) => v.toFixed(0) });
+  const syncOK = (s: PlantState) => {
+    const g = gn(s);
+    return !!g && !s.generatorBreakerClosed && g.fieldBreakerClosed && Math.abs(g.terminalKv - g.gridKv) < 0.05 * g.gridKv && Math.abs(g.slipHz) < 0.2 && Math.abs(g.syncPhaseDeg) < 10;
+  };
+  kit.lamp(S9, 'v', 0.855, 1.855, { title: 'GEN BKR\nCLOSED', color: 'red', get: (s) => s.generatorBreakerClosed });
+  kit.lamp(S9, 'v', 0.855, 1.755, { title: 'GEN BKR\nOPEN', color: 'green', get: (s) => !s.generatorBreakerClosed });
+  kit.lamp(S9, 'v', 0.855, 1.655, { title: 'SYNC CHECK\nPERMISSIVE', hover: 'SYNC CHECK PERMISSIVE (field closed, ΔV < 5 %, scope within 10° of 12)', color: 'white', get: syncOK });
+  kit.lamp(S9, 'v', 0.985, 1.855, { title: 'FIELD BKR\nCLOSED', color: 'red', get: (s) => !!gn(s)?.fieldBreakerClosed });
+  kit.lamp(S9, 'v', 0.985, 1.755, { title: 'FIELD BKR\nOPEN', color: 'green', get: (s) => !gn(s)?.fieldBreakerClosed });
+  kit.lamp(S9, 'v', 0.985, 1.655, { title: 'GEN PROTECT\nTRIP', hover: 'GENERATOR PROTECTION (damage)', color: 'red', get: (s) => (gn(s)?.damage ?? 0) > 0, flash: true });
+  kit.readout(S9, 'v', 0.1, 1.45, { title: 'GROSS MWE', get: (s) => fmt(s.grossMWe, 0), color: 'green', unit: 'MWe' });
+  kit.readout(S9, 'v', 0.265, 1.45, { title: 'NET MWE', get: (s) => fmt(gn(s)?.netMWe ?? 0, 0), color: 'green', unit: 'MWe (gross − house loads)' });
+  kit.readout(S9, 'v', 0.43, 1.45, { title: 'GEN KV', get: (s) => fmt(gn(s)?.terminalKv ?? 0, 2), unit: 'kV' });
+  kit.readout(S9, 'v', 0.595, 1.45, { title: 'GRID KV', get: (s) => fmt(gn(s)?.gridKv ?? 0, 2), unit: 'kV' });
+  kit.readout(S9, 'v', 0.76, 1.45, { title: 'MVAR', get: (s) => fmt(gn(s)?.mvar ?? 0, 0), color: 'amber', unit: 'MVAR' });
+  kit.readout(S9, 'v', 0.925, 1.45, { title: 'POWER FACTOR', get: (s) => fmt(gn(s)?.powerFactor ?? 0, 3), color: 'amber' });
+  kit.readout(S9, 'v', 0.1, 1.27, { title: 'VOLT SETPT KV', get: () => fmt(C().genVoltageSetpointKv ?? 0, 2), color: 'amber', unit: 'kV' });
+  kit.readout(S9, 'v', 0.265, 1.27, { title: 'SLIP HZ', get: (s) => { const v = gn(s)?.slipHz ?? 0; return (v >= 0 ? '+' : '') + v.toFixed(3); }, color: 'amber', unit: 'Hz' });
+  kit.label(S9, 'v', 0.7, 1.27, 'SYNC: 1800 RPM → FIELD CLOSE → MATCH GEN KV TO GRID KV\nSET ~1801.5 RPM (SCOPE SLOW FAST) → CLOSE BKR AT 12 O\'CLOCK', 0.68, 0.055, 'white');
 
-  kit.groupBox(S9, 'b', -1.0, 0.06, -0.08, 0.62, 'TURBINE');
-  kit.button(S9, 'b', -0.75, 0.42, { id: 'TURBINE_LATCH', title: 'LATCH', press: 'TURBINE_LATCH', color: 0xd8d4c4 });
-  kit.button(S9, 'b', -0.75, 0.16, { id: 'TURBINE_TRIP', title: 'TURBINE\nTRIP', press: 'TURBINE_TRIP', color: 0xb01c14, mushroom: true, guard: true });
-  kit.knob(S9, 'b', -0.38, 0.4, { id: 'TURB_LOAD_SETPT', title: 'LOAD SETPOINT MW', min: 0, max: 1250, step: 5, coarse: 50, get: (c) => c.turbineLoadSetpointMW, set: (c, v) => (c.turbineLoadSetpointMW = v), fmt: (v) => `${v.toFixed(0)} MW`, ticks: ['0', '625', '1250'] });
-  kit.knob(S9, 'b', -0.38, 0.16, { id: 'TURB_RAMP', title: 'RAMP MW/MIN', min: 1, max: 50, step: 1, coarse: 5, get: (c) => c.turbineRampRateMWpm, set: (c, v) => (c.turbineRampRateMWpm = v), fmt: (v) => `${v.toFixed(0)} MW/min`, ticks: ['1', '25', '50'] });
-  kit.groupBox(S9, 'b', 0.05, 0.06, 1.0, 0.62, 'GENERATOR BREAKER');
-  kit.button(S9, 'b', 0.3, 0.36, { id: 'GEN_BREAKER_CLOSE', title: 'BKR CLOSE', press: 'GEN_BREAKER_CLOSE', color: 0x8c1a14 });
-  kit.button(S9, 'b', 0.6, 0.36, { id: 'GEN_BREAKER_OPEN', title: 'BKR OPEN', press: 'GEN_BREAKER_OPEN', color: 0x1d5a2a });
+  kit.groupBox(S9, 'b', -1.03, 0.05, -0.03, 0.62, 'TURBINE CONTROL');
+  kit.button(S9, 'b', -0.89, 0.42, { id: 'TURBINE_LATCH', title: 'LATCH', hover: 'TURBINE LATCH (reset)', press: 'TURBINE_LATCH', color: 0xd8d4c4, lamp: (s) => s.turbineLatched, lampColor: 'white' });
+  kit.button(S9, 'b', -0.89, 0.15, { id: 'TURBINE_TRIP', title: 'TURBINE\nTRIP', press: 'TURBINE_TRIP', color: 0xb01c14, mushroom: true, guard: true });
+  kit.knob(S9, 'b', -0.64, 0.42, { id: 'TURB_SPEED_SETPT', title: 'SPEED SETPT RPM', min: 0, max: 1830, step: 0.5, coarse: 50, get: (c) => c.turbineSpeedSetpointRpm ?? 0, set: (c, v) => (c.turbineSpeedSetpointRpm = v), fmt: (v) => `${v.toFixed(1)} rpm`, ticks: ['0', '915', '1830'], detents: [0, 500, 1800] });
+  kit.knob(S9, 'b', -0.64, 0.17, { id: 'TURB_ACCEL', title: 'ACCEL RPM/MIN', min: 20, max: 400, step: 5, coarse: 50, get: (c) => c.turbineAccelRpmPerMin ?? 100, set: (c, v) => (c.turbineAccelRpmPerMin = v), fmt: (v) => `${v.toFixed(0)} rpm/min`, ticks: ['20', '210', '400'] });
+  kit.knob(S9, 'b', -0.39, 0.42, { id: 'TURB_LOAD_SETPT', title: 'LOAD SETPOINT MW', min: 0, max: 1250, step: 5, coarse: 50, get: (c) => c.turbineLoadSetpointMW, set: (c, v) => (c.turbineLoadSetpointMW = v), fmt: (v) => `${v.toFixed(0)} MW`, ticks: ['0', '625', '1250'] });
+  kit.knob(S9, 'b', -0.39, 0.17, { id: 'TURB_RAMP', title: 'RAMP MW/MIN', min: 1, max: 50, step: 1, coarse: 5, get: (c) => c.turbineRampRateMWpm, set: (c, v) => (c.turbineRampRateMWpm = v), fmt: (v) => `${v.toFixed(0)} MW/min`, ticks: ['1', '25', '50'] });
+  kit.switch(S9, 'b', -0.15, 0.42, { id: 'TURNING_GEAR', title: 'TURNING GEAR', positions: ['DISENG', 'ENGAGE'], get: (c) => (c.turningGear ? 1 : 0), set: (c, i) => (c.turningGear = i === 1), size: 0.12 });
+  kit.label(S9, 'b', -0.15, 0.18, 'KEEP ENGAGED\nWHILE STOPPED.\nDISENGAGES\nWHEN ROLLING', 0.15, 0.08, 'white');
+  kit.groupBox(S9, 'b', 0.03, 0.05, 1.03, 0.62, 'GENERATOR EXCITATION / BREAKER');
+  kit.button(S9, 'b', 0.15, 0.42, { id: 'GEN_FIELD_CLOSE', title: 'FIELD CLOSE', hover: 'GEN FIELD BREAKER CLOSE (> 1700 rpm)', press: 'GEN_FIELD_CLOSE', color: 0x8c1a14, lamp: (s) => !!gn(s)?.fieldBreakerClosed, lampColor: 'red' });
+  kit.button(S9, 'b', 0.15, 0.15, { id: 'GEN_FIELD_OPEN', title: 'FIELD OPEN', hover: 'GEN FIELD BREAKER OPEN (trips gen if on line!)', press: 'GEN_FIELD_OPEN', color: 0x1d5a2a, lamp: (s) => !gn(s)?.fieldBreakerClosed, lampColor: 'green' });
+  kit.knob(S9, 'b', 0.43, 0.42, { id: 'GEN_VOLT_SETPT', title: 'VOLTAGE SETPT KV', min: 18, max: 26, step: 0.05, coarse: 0.5, get: (c) => c.genVoltageSetpointKv ?? 22, set: (c, v) => (c.genVoltageSetpointKv = Math.round(v * 100) / 100), fmt: (v) => `${v.toFixed(2)} kV`, ticks: ['18', '22', '26'] });
+  kit.label(S9, 'b', 0.43, 0.17, 'OFF LINE: MATCH GEN KV\nTO GRID KV (±5 %)\nON LINE: RAISES MVAR', 0.22, 0.065, 'white');
+  kit.button(S9, 'b', 0.72, 0.42, { id: 'GEN_BREAKER_CLOSE', title: 'GEN BKR CLOSE', hover: 'GENERATOR BREAKER CLOSE (synchronize)', press: 'GEN_BREAKER_CLOSE', color: 0x8c1a14, lamp: (s) => s.generatorBreakerClosed, lampColor: 'red' });
+  kit.button(S9, 'b', 0.72, 0.15, { id: 'GEN_BREAKER_OPEN', title: 'GEN BKR OPEN', hover: 'GENERATOR BREAKER OPEN', press: 'GEN_BREAKER_OPEN', color: 0x1d5a2a, lamp: (s) => !s.generatorBreakerClosed, lampColor: 'green' });
+  kit.label(S9, 'b', 0.93, 0.3, 'CLOSE ONLY\nNEAR 12 O\'CLOCK\nOUT-OF-PHASE\nCLOSURE\nDAMAGES GEN', 0.15, 0.1, 'red');
 
   void bus;
   void DEG;

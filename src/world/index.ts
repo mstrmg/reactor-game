@@ -17,6 +17,7 @@ import { PanelKit } from './panel';
 import { buildLayout } from './layout';
 import { Annunciators } from './annunciator';
 import { buildRoom } from './room';
+import { buildAuxPanels } from './auxpanels';
 import { Player } from './player';
 
 export interface WorldApi {
@@ -86,6 +87,7 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
   const layout = buildLayout(kit, sim);
   const ann = new Annunciators(kit, layout.sections, layout.firstOutAt);
   const room = buildRoom(kit, scene, layout.sections, layout.crtB.tex);
+  buildAuxPanels(kit, sim, room.workPanels);
   const shellMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   kit.finalize(scene, shellMat);
   scene.add(ann.mesh);

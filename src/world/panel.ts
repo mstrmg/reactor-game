@@ -79,6 +79,11 @@ export function makeSection(index: number, name: string): Section {
   return { index, name, theta, matrix, warp };
 }
 
+/** a flat vertical panel (cabinet face) usable with the kit's 'v' surface: u = local x, v = height (m) */
+export function makeFlatSection(index: number, name: string, matrix: THREE.Matrix4): Section {
+  return { index, name, theta: 0, matrix, warp: () => {} };
+}
+
 /** World matrix of a point on a section surface. +z = surface normal, +y = "up" on the surface. */
 export function surfaceFrame(sec: Section, surf: Surf, u: number, v: number, lift = 0, out = new THREE.Matrix4()): THREE.Matrix4 {
   if (surf === 'v') {
@@ -160,6 +165,8 @@ export interface KnobDef {
   set: (c: PlantControls, v: number) => void;
   fmt: (v: number) => string;
   ticks?: string[];
+  /** coarse / accelerated steps stop at these values (e.g. 0, 500, 1800 rpm) */
+  detents?: number[];
 }
 
 export interface ButtonDef {
@@ -264,8 +271,9 @@ export class PanelKit {
   staticQuads = {
     add: (r: Region, w: number, h: number, m: THREE.Matrix4, color?: THREE.ColorRepresentation) => this.pages[r.page ?? 0].quads.add(r, w, h, m, color),
   };
-  readAtlas = new CanvasAtlas(1024, 1024, 2, '#050302');
+  readAtlas = new CanvasAtlas(2048, 2048, 2, '#050302'); // cropped to the used height in finalize()
   readQuads = new QuadBucket();
+  private readCropK = 1;
   interactables: Interactable[] = [];
 
   private needles: NeedleInst[] = [];
@@ -773,7 +781,7 @@ export class PanelKit {
       id: def.id,
       label: def.title,
       kind: 'switch',
-      detail: () => `${def.positions[get()]}   [LMB ▶ / RMB ◀]`,
+      detail: () => `${def.positions[get()]}   [LMB(F) ▶ next · RMB(R) ◀ prev · wheel]`,
       primary: () => step(1),
       secondary: () => step(-1),
       wheel: (d) => step(d),
@@ -822,22 +830,47 @@ export class PanelKit {
       }
     };
     this.knobs.push({ base: pivot, scale: 1, angle: 0, target: () => -(-135 + 270 * ((get() - def.min) / (def.max - def.min))) * DEG });
-    const adj = (d: number, coarse: boolean) => {
+    const det = def.detents ? [...def.detents].sort((a, b) => a - b) : null;
+    const adj = (d: number, mult: number, coarse: boolean): boolean => {
       const v0 = get();
-      const v1 = Math.max(def.min, Math.min(def.max, Math.round((v0 + d * (coarse ? def.coarse : def.step)) / def.step) * def.step));
+      let v1 = v0 + d * (coarse ? def.coarse : def.step * mult);
+      let hitDetent = false;
+      if (det && (coarse || mult > 1)) {
+        const list = d > 0 ? det : [...det].reverse();
+        for (const t of list) {
+          if ((d > 0 && t > v0 + 1e-9 && t < v1) || (d < 0 && t < v0 - 1e-9 && t > v1)) {
+            v1 = t;
+            hitDetent = true;
+            break;
+          }
+        }
+      }
+      v1 = Math.max(def.min, Math.min(def.max, Math.round(v1 / def.step) * def.step));
       if (v1 !== v0) {
         def.set(sim.controls, v1);
         bus.emit('control-used', { id: def.id, kind: 'knob' });
       }
+      return hitDetent;
     };
+    // held LMB/RMB auto-repeat accelerates (x5 after ~1 s, x20 after ~2.5 s) and pauses at detents
+    let lastT = 0;
+    let run = 0;
+    const held = (d: number) => {
+      const now = performance.now();
+      run = now - lastT < 150 ? run + 1 : 0;
+      lastT = now;
+      const mult = run > 40 ? 20 : run > 15 ? 5 : 1;
+      if (adj(d, mult, false)) run = -12;
+    };
+    const det0 = det ? ` · detents ${det.map((x) => def.fmt(x)).join(' / ')}` : '';
     this.register(pivot, [0.035, 0.035, 0.05], {
       id: def.id,
       label: def.title,
       kind: 'knob',
-      detail: () => `${def.fmt(get())}   [wheel / LMB+ RMB−, Shift = coarse]`,
-      primary: () => adj(1, false),
-      secondary: () => adj(-1, false),
-      wheel: (d, c) => adj(d, c),
+      detail: () => `${def.fmt(get())}   [wheel ↑/↓ · LMB(F) + / RMB(R) − (hold = faster) · Shift = coarse${det0}]`,
+      primary: () => held(1),
+      secondary: () => held(-1),
+      wheel: (d, c) => void adj(d, 1, c),
       repeat: true,
     });
   }
@@ -867,7 +900,7 @@ export class PanelKit {
       detail: (s, c) => {
         const m = c.rodMotion === 1 ? 'OUT' : c.rodMotion === -1 ? 'IN' : 'HOLD';
         const mode = c.rodMode === 'auto' ? ' (rods in AUTO)' : '';
-        return `${m}${mode}   [hold LMB = withdraw · hold RMB = insert]`;
+        return `${m}${mode}   [hold LMB(F) = withdraw · hold RMB(R) = insert]`;
       },
       holdStart: (dir) => {
         sim.controls.rodMotion = dir > 0 ? 1 : -1;
@@ -958,12 +991,28 @@ export class PanelKit {
       scene.add(labels);
     });
 
+    {
+      // crop the dynamic readout atlas to its used height (less to upload each refresh) and remap v
+      const A = this.readAtlas;
+      const usedH = Math.min(A.H, Math.max(64, Math.ceil((A.usage() * A.H) / 64) * 64));
+      A.tex.dispose();
+      A.canvas.height = usedH;
+      A.ctx.fillStyle = '#050302';
+      A.ctx.fillRect(0, 0, A.W, usedH);
+      A.tex = new THREE.CanvasTexture(A.canvas);
+      A.tex.colorSpace = THREE.SRGBColorSpace;
+      this.readCropK = A.H / usedH;
+    }
     this.readAtlas.tex.anisotropy = 4;
     this.readAtlas.tex.generateMipmaps = false;
     this.readAtlas.tex.minFilter = THREE.LinearFilter;
     const readMat = new THREE.MeshBasicMaterial({ map: this.readAtlas.tex, vertexColors: true, toneMapped: true });
     readMat.color.setScalar(1.35);
     const reads = this.readQuads.build(readMat);
+    {
+      const uvA = reads.geometry.getAttribute('uv') as THREE.BufferAttribute;
+      for (let i = 0; i < uvA.count; i++) uvA.setY(i, 1 - (1 - uvA.getY(i)) * this.readCropK);
+    }
     reads.name = 'readouts';
     scene.add(reads);
 

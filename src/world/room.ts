@@ -30,6 +30,8 @@ export interface RoomResult {
   beaconBeams: THREE.Mesh;
   exitSign: THREE.Mesh;
   supervisorScreen: THREE.Mesh;
+  /** flat pseudo-sections of the working auxiliary cabinets (left inner, left outer, right inner, right outer) */
+  workPanels: Section[];
 }
 
 const _m = new THREE.Matrix4();
@@ -297,7 +299,7 @@ export function buildRoom(kit: PanelKit, scene: THREE.Scene, sections: Section[]
   scene.add(beacon);
 
   void DEG;
-  return { troffers, trofferMat, floor, ceiling, colliders, beacon, beaconLamp, beaconBeams: beamsAll, exitSign, supervisorScreen: supScreen };
+  return { troffers, trofferMat, floor, ceiling, colliders, beacon, beaconLamp, beaconBeams: beamsAll, exitSign, supervisorScreen: supScreen, workPanels: furn.workPanels };
 }
 
 function drawClockFace(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: number; h: number }): void {

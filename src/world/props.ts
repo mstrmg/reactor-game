@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three';
 import type { PlantState } from '../sim/types';
-import { PanelKit, PALETTE, RF, type MeterDef } from './panel';
+import { PanelKit, PALETTE, RF, makeFlatSection, type MeterDef, type Section } from './panel';
 import { ROOM, type Collider } from './room';
 import { FONT, GeoBucket, MONO, Region, box, cyl, fitText, rbox, zcyl } from './util';
 
@@ -152,6 +152,37 @@ function cabinet(c: Ctx, x: number, z: number, ry: number, w: number, h: number,
   c.addCol(p.x, p.z, w / 2 + 0.01, d / 2 + 0.03, ry);
 }
 
+/** a floor-standing cabinet with a plain instrument face that carries WORKING hardware (see auxpanels.ts).
+ *  Returns a flat pseudo-section: u = local x (m, 0 = centre), v = height above the floor (m), on the face plate. */
+function workCabinet(c: Ctx, index: number, x: number, z: number, ry: number, w: number, h: number, d: number, title: string): Section {
+  const { B, kit } = c;
+  const F = T(x, 0, z, ry);
+  const L = (lx: number, ly: number, lz: number) => T(lx, ly, lz).premultiply(F);
+  B.add(rbox(w - 0.012, h - 0.1, d, 0.02, 2), L(0, 0.1 + (h - 0.1) / 2, 0), PALETTE.panel);
+  B.add(box(w - 0.1, 0.1, d - 0.14), L(0, 0.052, -0.02), 0x232120);
+  B.add(rbox(w + 0.012, 0.05, d + 0.03, 0.02, 2), L(0, h + 0.024, 0), PALETTE.panelDark);
+  const zf = d / 2;
+  const fy0 = 0.95;
+  const fy1 = h - 0.07;
+  B.add(rbox(w - 0.06, fy1 - fy0, 0.014, 0.006), L(0, (fy0 + fy1) / 2, zf + 0.007), 0x9cc8b2);
+  // trim strip under the face plate
+  B.add(box(w - 0.04, 0.03, 0.03), L(0, fy0 - 0.012, zf + 0.012), PALETTE.trim);
+  const zp = zf + 0.014;
+  const dw = (w - 0.1) / 2;
+  for (const sx of [-1, 1]) {
+    const cx = (sx * (w - 0.08)) / 4;
+    B.add(rbox(dw - 0.01, 0.74, 0.014, 0.006), L(cx, 0.52, zf + 0.007), 0x86b39e);
+    for (let k = 0; k < 6; k++) B.add(box(dw - 0.12, 0.014, 0.012), L(cx, 0.24 + k * 0.032, zf + 0.018), 0x3a403c);
+    B.add(rbox(0.022, 0.12, 0.028, 0.008), L(cx - sx * (dw / 2 - 0.06), 0.62, zf + 0.026), 0xaab0b4);
+  }
+  // engraved title strip
+  B.add(rbox(w - 0.14, 0.1, 0.008, 0.004), L(0, h - 0.135, zp + 0.004), 0x1b1c1e, { ao: false });
+  kit.labelAt(L(0, h - 0.135, zp + 0.0085), title, w - 0.2, 0.072, 'white', 900);
+  const p = new THREE.Vector3(0, 0, 0).applyMatrix4(F);
+  c.addCol(p.x, p.z, w / 2 + 0.01, d / 2 + 0.03, ry);
+  return makeFlatSection(index, title, L(0, 0, zp));
+}
+
 /** office/rolling chair; sits facing local -z */
 function chair(B: GeoBucket, x: number, z: number, ry: number, color = 0x2c3440): void {
   const F = T(x, 0, z, ry);
@@ -270,7 +301,10 @@ export function furnish(kit: PanelKit, scene: THREE.Scene, colliders: Collider[]
     B.add(lathe, null, 0x9aa1a4, { ao: false });
   }
 
-  /* ---------- auxiliary panels closing the horseshoe ends to the side walls ---------- */
+  /* ---------- working auxiliary panels closing the horseshoe ends to the side walls ---------- */
+  // left: ELECTRICAL DISTRIBUTION + COMPONENT COOLING / SERVICE WATER (next to SAFETY & ELECTRICAL)
+  // right: CIRC WATER / CONDENSER VACUUM + CONDENSATE / FW HEATERS (next to TURBINE / GENERATOR)
+  const workPanels: Section[] = [];
   for (const side of [-1, 1]) {
     const x0 = RF + 0.55; // just outside the end board
     const x1 = -R.x0 - 0.02;
@@ -278,12 +312,13 @@ export function furnish(kit: PanelKit, scene: THREE.Scene, colliders: Collider[]
     const w = (x1 - x0) / n;
     for (let i = 0; i < n; i++) {
       const cx = side * (x0 + w * (i + 0.5));
-      cabinet(c, cx, -0.48, 0, w, 2.3, 0.84, side < 0 ? ['AUX FEEDWATER', 'DIESEL GEN A/B'][i] : ['MAIN STEAM ISOL', 'CONDENSATE'][i], 0);
+      const title = side < 0 ? ['ELECTRICAL DISTRIBUTION', 'COMPONENT COOLING / SERVICE WTR'][i] : ['CIRC WATER / COND VACUUM', 'CONDENSATE / FW HEATERS'][i];
+      workPanels.push(workCabinet(c, 100 + workPanels.length, cx, -0.48, 0, w, 2.3, 0.84, title));
     }
   }
 
   /* ---------- back panel row (3D cabinets, facing -z) ---------- */
-  const bpNames = ['RADIATION MONITORING', 'ELECTRICAL DISTRIBUTION', '4160V SWITCHGEAR', 'CTMT HVAC', 'COMPONENT COOLING', 'SERVICE WATER', 'FIRE PROTECTION'];
+  const bpNames = ['RADIATION MONITORING', 'PLANT VENTILATION', '4160V SWITCHGEAR', 'CTMT HVAC', 'SEISMIC MONITORING', 'LOOSE PARTS MONITOR', 'FIRE PROTECTION'];
   const bpW = 1.6;
   for (let i = 0; i < bpNames.length; i++) {
     const x = -((bpNames.length - 1) * bpW) / 2 + i * bpW;
@@ -621,6 +656,7 @@ export function furnish(kit: PanelKit, scene: THREE.Scene, colliders: Collider[]
   }
 
   return {
+    workPanels,
     supervisorScreen(tex: THREE.Texture): THREE.Mesh {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.255), new THREE.MeshBasicMaterial({ map: tex }));
       (m.material as THREE.MeshBasicMaterial).color.setScalar(1.15);

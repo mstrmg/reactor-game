@@ -596,6 +596,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     const t = st()?.t ?? 0;
     switch (e.type) {
       case 'message':
+        if (e.text.startsWith('FAULT:')) break; // the 'fault' event already logs it
         addLog(t, e.text, 'info');
         break;
       case 'alarm': {
