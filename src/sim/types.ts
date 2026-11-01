@@ -279,6 +279,28 @@ export interface PlantState {
     trips: number;
     timeAtPowerS: number;
   };
+
+  /** ADDITIVE (optional) extra indications published by the sim. Safe to ignore. */
+  ext?: PlantExt;
+}
+
+/** Extra indications (additive contract extension, populated by src/sim). */
+export interface PlantExt {
+  tavgProgramDeviation: number; // °F Tavg − Tref
+  steamDumpsAvailable: boolean; // C-9 condenser available
+  coreLevelPct: number; // reactor vessel level over the core (RVLIS-like), 100 = covered
+  rcsInventoryPct: number; // primary mass vs nominal
+  hydrogenKg: number;
+  siSignals: string[]; // ESFAS signals currently present
+  rodStops: { C1: boolean; C2: boolean; C3: boolean; C4: boolean; C5: boolean };
+  otdtSetpoint: number; // °F, lowest-loop overtemperature ΔT trip setpoint
+  opdtSetpoint: number; // °F, overpower ΔT trip setpoint
+  msivOpen: boolean[]; // 4
+  vctBoronPpm: number; // boron concentration of charging (VCT)
+  fwIsolation: boolean; // feedwater isolation / FRVs closed
+  clad: { maxTempF: number; oxidationPct: number };
+  prtRuptured: boolean;
+  shutdownMarginPcm: number; // positive = subcritical margin if tripped now
 }
 
 /** Events the sim emits each step (drain with ReactorSim.drainEvents()). */
