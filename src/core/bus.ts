@@ -15,6 +15,19 @@ export interface BusEvents {
   'pause-changed': boolean;
   /** world: pointer lock state */
   'pointer-lock': boolean;
+
+  // ---- Phone call / remote reactor view / tour ----
+  /** world -> ui: player activated the desk telephone (ui starts the call dialogue) */
+  'phone-pickup': void;
+  /** ui -> world (and anyone): which camera/scene is shown.
+   *  'control-room' = normal FPS; 'reactor-cam' = colleague's view on the reactor bridge;
+   *  'tour' = guided tour inside the reactor. In non-control-room modes the pointer is
+   *  unlocked (so buttons are clickable) and losing pointer lock must NOT pause the game. */
+  'view-mode': 'control-room' | 'reactor-cam' | 'tour';
+  /** ui -> world: next / previous tour stop */
+  'tour-nav': 1 | -1;
+  /** world -> ui: tour arrived at a stop (ui shows the caption with typewriter + babble) */
+  'tour-stop': { index: number; count: number; title: string; text: string };
 }
 
 type Handler<T> = (payload: T) => void;
@@ -27,7 +40,8 @@ class Bus {
     s.add(h);
     return () => s!.delete(h);
   }
-  emit<K extends keyof BusEvents>(k: K, payload: BusEvents[K]): void {
+  emit<K extends keyof BusEvents>(k: K, ...args: BusEvents[K] extends void ? [] : [BusEvents[K]]): void {
+    const payload = args[0];
     this.map.get(k)?.forEach((h) => h(payload));
   }
 }
