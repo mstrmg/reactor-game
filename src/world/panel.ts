@@ -15,6 +15,7 @@ import {
   QuadBucket,
   Region,
   box,
+  rbox,
   fitText,
   safeBool,
   safeNum,
@@ -248,8 +249,21 @@ function lampOff(c: LampDef['color']): THREE.Color {
 /* ------------------------------------------------------------------ */
 export class PanelKit {
   shell = new GeoBucket();
-  staticAtlas = new CanvasAtlas(4096, 4096, 4, '#202020');
-  staticQuads = new QuadBucket();
+  /** static artwork lives on one or more atlas pages (one draw call each) */
+  pages: { atlas: CanvasAtlas; quads: QuadBucket }[] = [{ atlas: new CanvasAtlas(4096, 4096, 4, '#202020'), quads: new QuadBucket() }];
+  get staticAtlas(): CanvasAtlas {
+    return this.pages[this.pages.length - 1].atlas;
+  }
+  /** allocate on the current page, opening a new page when full */
+  allocStatic(w: number, h: number): Region {
+    if (!this.staticAtlas.canFit(w, h)) this.pages.push({ atlas: new CanvasAtlas(4096, 4096, 4, '#202020'), quads: new QuadBucket() });
+    const r = this.staticAtlas.alloc(w, h);
+    r.page = this.pages.length - 1;
+    return r;
+  }
+  staticQuads = {
+    add: (r: Region, w: number, h: number, m: THREE.Matrix4, color?: THREE.ColorRepresentation) => this.pages[r.page ?? 0].quads.add(r, w, h, m, color),
+  };
   readAtlas = new CanvasAtlas(1024, 1024, 2, '#050302');
   readQuads = new QuadBucket();
   interactables: Interactable[] = [];
@@ -285,37 +299,51 @@ export class PanelKit {
     };
     // kick plate & lower cabinet
     add(box(W, 0.1, 0.5), 0, 0.05, 0.25, P.kick);
-    add(box(W, 0.74, 0.62), 0, 0.1 + 0.37, 0.29, P.lower);
+    add(rbox(W, 0.74, 0.62, 0.012), 0, 0.1 + 0.37, 0.29, P.lower);
     // horizontal trim line on lower front
     add(box(W, 0.02, 0.01), 0, 0.62, 0.605, P.trim);
     // arm rest at bench front
-    add(box(W, 0.05, 0.1), 0, 0.84, 0.62, P.arm);
+    add(rbox(W, 0.056, 0.11, 0.026, 4), 0, 0.84, 0.62, P.arm);
     // bench slab (sloped)
     const benchCenterZ = BENCH_FRONT_Z / 2;
     const benchCenterY = BENCH_BACK_Y - 0.4 * benchCenterZ - 0.016;
-    add(box(W, 0.032, BENCH_LEN + 0.01), 0, benchCenterY, benchCenterZ, P.bench, BENCH_SLOPE);
+    add(rbox(W, 0.032, BENCH_LEN + 0.01, 0.008), 0, benchCenterY, benchCenterZ, P.bench, BENCH_SLOPE);
     // back cabinet block below bench + vertical panel body
     add(box(W, 1.0, 0.5), 0, 0.6, -0.25, P.lower, 0);
-    add(box(W, BOARD_TOP - 1.08, 0.5), 0, 1.08 + (BOARD_TOP - 1.08) / 2, -0.25, P.panel);
+    add(rbox(W, BOARD_TOP - 1.08, 0.5, 0.012), 0, 1.08 + (BOARD_TOP - 1.08) / 2, -0.25, P.panel);
     // inset vertical face plate (very thin, slightly lighter so seams read)
     add(box(W - 0.03, 0.84, 0.004), 0, 1.1 + 0.42, -0.0012, P.panel, 0);
     // vertical seam trims at section edges
-    add(box(0.022, 0.86, 0.012), -HALF_W + 0.011, 1.1 + 0.43, 0.004, P.trim);
-    add(box(0.022, 0.86, 0.012), HALF_W - 0.011, 1.1 + 0.43, 0.004, P.trim);
+    add(rbox(0.024, 0.86, 0.014, 0.005), -HALF_W + 0.012, 1.1 + 0.43, 0.004, P.trim);
+    add(rbox(0.024, 0.86, 0.014, 0.005), HALF_W - 0.012, 1.1 + 0.43, 0.004, P.trim);
     // annunciator housing
-    add(box(W, 0.37, 0.14), 0, 2.125, 0.07, P.annHousing);
+    add(rbox(W, 0.37, 0.14, 0.018, 2), 0, 2.125, 0.07, P.annHousing);
     // top hood + placard fascia
-    add(box(W, 0.06, 0.7), 0, BOARD_TOP - 0.03, -0.12, P.panelDark);
-    add(box(W, 0.13, 0.04), 0, BOARD_TOP - 0.035, 0.22, P.fascia);
+    add(rbox(W, 0.06, 0.7, 0.02, 2), 0, BOARD_TOP - 0.03, -0.12, P.panelDark);
+    add(rbox(W, 0.13, 0.04, 0.012, 2), 0, BOARD_TOP - 0.035, 0.22, P.fascia);
     // underside light strip of hood (lit by the room anyway)
     add(box(W, 0.012, 0.09), 0, BOARD_TOP - 0.1, 0.18, 0xd9d4c4);
+  }
+
+  /** raised rim around a face (4 bevelled strips) */
+  bezelLip(frame: THREE.Matrix4, fw: number, fh: number, z: number, t: number, color: number): void {
+    const d = 0.006;
+    const strips: [number, number, number, number][] = [
+      [0, fh / 2 + t / 2, fw + 2 * t, t],
+      [0, -fh / 2 - t / 2, fw + 2 * t, t],
+      [-fw / 2 - t / 2, 0, t, fh],
+      [fw / 2 + t / 2, 0, t, fh],
+    ];
+    for (const [x, y, w, h] of strips) {
+      this.shell.add(box(w, h, d), _m.makeTranslation(x, y, z + d / 2).premultiply(frame), color, { ao: false });
+    }
   }
 
   placard(sec: Section, text: string): void {
     // big section name on hood fascia
     const w = HALF_W * 2 - 0.2;
     const h = 0.1;
-    const r = this.staticAtlas.alloc(900, 80);
+    const r = this.allocStatic(Math.round(w * 640), Math.round(h * 640));
     const ctx = this.staticAtlas.ctx;
     ctx.fillStyle = '#16202e';
     ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -325,17 +353,29 @@ export class PanelKit {
     ctx.fillStyle = '#f4ecd2';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    fitText(ctx, text, r.x + r.w / 2, r.y + r.h / 2 + 2, r.w - 40, 54, 'bold');
+    fitText(ctx, text, r.x + r.w / 2, r.y + r.h / 2 + 2, r.w - 40, Math.round(r.h * 0.68), 'bold');
     _m.makeTranslation(0, BOARD_TOP - 0.035, 0.241).premultiply(sec.matrix);
     this.staticQuads.add(r, w, h, _m);
   }
 
   /* ---------------- labels ---------------- */
+  /** custom static artwork drawn into the atlas, mapped onto a w×h plane (aspect preserved) */
+  staticDraw(frame: THREE.Matrix4, w: number, h: number, pxPerM: number, draw: (ctx: CanvasRenderingContext2D, r: Region) => void): Region {
+    const r = this.allocStatic(Math.max(8, Math.round(w * pxPerM)), Math.max(8, Math.round(h * pxPerM)));
+    draw(this.staticAtlas.ctx, r);
+    this.staticQuads.add(r, w, h, frame);
+    return r;
+  }
+  /** re-use an existing atlas region on another plane */
+  quad(r: Region, frame: THREE.Matrix4, w: number, h: number): void {
+    this.staticQuads.add(r, w, h, frame);
+  }
+
   /** engraved lamacoid label at an arbitrary frame */
   labelAt(frame: THREE.Matrix4, text: string, w: number, h: number, style: 'black' | 'white' | 'red' | 'yellow' = 'black', pxPerM = 1500): void {
     const pw = Math.max(16, Math.round(w * pxPerM));
     const ph = Math.max(10, Math.round(h * pxPerM));
-    const r = this.staticAtlas.alloc(pw, ph);
+    const r = this.allocStatic(pw, ph);
     const ctx = this.staticAtlas.ctx;
     const bg = { black: '#151515', white: '#ece8dc', red: '#8d1c16', yellow: '#e2b62a' }[style];
     const fg = { black: '#f2efe6', white: '#141414', red: '#fff4ec', yellow: '#151515' }[style];
@@ -391,7 +431,7 @@ export class PanelKit {
   }
 
   /* ---------------- analog meters ---------------- */
-  private mapT(def: MeterDef, v: number): number {
+  mapT(def: MeterDef, v: number): number {
     let t: number;
     if (def.log) {
       const lv = Math.log10(Math.max(v, def.min * 0.5));
@@ -428,12 +468,13 @@ export class PanelKit {
     const S = def.size ?? 0.15;
     const frame = surfaceFrame(sec, surf, u, v, 0);
     // bezel
-    this.shell.add(box(S, S, 0.03), _m.makeTranslation(0, 0, 0.015).premultiply(frame), PALETTE.bezel, { ao: false });
+    this.shell.add(rbox(S, S, 0.03, 0.008), _m.makeTranslation(0, 0, 0.015).premultiply(frame), PALETTE.bezel, { ao: false });
+    this.bezelLip(frame, S * 0.9, S * 0.9, 0.03, 0.006, 0x2a2b2d);
     // face
     const fw = S * 0.9;
     const fh = S * 0.9;
     const px = Math.round(fw * 1250);
-    const r = this.staticAtlas.alloc(px, px);
+    const r = this.allocStatic(px, px);
     this.drawDial(this.staticAtlas.ctx, r, def);
     _m.makeTranslation(0, 0, 0.0305).premultiply(frame);
     this.staticQuads.add(r, fw, fh, _m);
@@ -445,7 +486,7 @@ export class PanelKit {
     if (def.get2) this.needles.push(this.mkNeedle(base, 'rot', map, def.get2, len * 0.9, 0.0035, 0xc81e1e));
     this.needles.push(this.mkNeedle(base, 'rot', map, def.get, len, 0.0022, 0x111111));
     // pivot cap
-    this.shell.add(zcyl(0.006, 0.006, 0.004, 10), _m.makeTranslation(0, pivotY, 0.031).premultiply(frame), 0x111111, { ao: false });
+    this.shell.add(zcyl(0.006, 0.006, 0.004, 16), _m.makeTranslation(0, pivotY, 0.031).premultiply(frame), 0x111111, { ao: false });
     this.registerInfo(frame, [S / 2, S / 2, 0.04], def.title, (s) => this.fmtMeter(def, s));
   }
 
@@ -454,10 +495,11 @@ export class PanelKit {
     const W = 0.062;
     const H = 0.2;
     const frame = surfaceFrame(sec, surf, u, v, 0);
-    this.shell.add(box(W, H, 0.035), _m.makeTranslation(0, 0, 0.0175).premultiply(frame), PALETTE.bezel, { ao: false });
+    this.shell.add(rbox(W, H, 0.035, 0.007), _m.makeTranslation(0, 0, 0.0175).premultiply(frame), PALETTE.bezel, { ao: false });
+    this.bezelLip(frame, W * 0.82, H * 0.9, 0.035, 0.004, 0x2a2b2d);
     const fw = W * 0.82;
     const fh = H * 0.9;
-    const r = this.staticAtlas.alloc(Math.round(fw * 1450), Math.round(fh * 1450));
+    const r = this.allocStatic(Math.round(fw * 1450), Math.round(fh * 1450));
     this.drawEdgewise(this.staticAtlas.ctx, r, def);
     _m.makeTranslation(0, 0, 0.0355).premultiply(frame);
     this.staticQuads.add(r, fw, fh, _m);
@@ -474,7 +516,7 @@ export class PanelKit {
   /** free-rotating needle with custom face (synchroscope, clock) */
   dialFree(frame: THREE.Matrix4, size: number, drawFace: (ctx: CanvasRenderingContext2D, r: Region) => void, hands: { get: Getter<number>; len: number; wid: number; color: number }[]): void {
     const px = Math.round(size * 1300);
-    const r = this.staticAtlas.alloc(px, px);
+    const r = this.allocStatic(px, px);
     drawFace(this.staticAtlas.ctx, r);
     _m.makeTranslation(0, 0, 0.0305).premultiply(frame);
     this.staticQuads.add(r, size, size, _m);
@@ -503,7 +545,7 @@ export class PanelKit {
     return out;
   }
 
-  private drawDial(ctx: CanvasRenderingContext2D, r: Region, def: MeterDef): void {
+  drawDial(ctx: CanvasRenderingContext2D, r: Region, def: MeterDef): void {
     const { x, y, w, h } = r;
     ctx.fillStyle = '#f1ecdc';
     ctx.fillRect(x, y, w, h);
@@ -563,7 +605,7 @@ export class PanelKit {
     ctx.fillText(def.unit, cx, y + h * 0.62);
   }
 
-  private drawEdgewise(ctx: CanvasRenderingContext2D, r: Region, def: MeterDef): void {
+  drawEdgewise(ctx: CanvasRenderingContext2D, r: Region, def: MeterDef): void {
     const { x, y, w, h } = r;
     ctx.fillStyle = '#f1ecdc';
     ctx.fillRect(x, y, w, h);
@@ -627,7 +669,7 @@ export class PanelKit {
   }
 
   lampAt(frame: THREE.Matrix4, def: LampDef): number {
-    this.shell.add(zcyl(0.016, 0.017, 0.008, 14), frame, 0x111111, { ao: false });
+    this.shell.add(zcyl(0.016, 0.017, 0.008, 12), frame, 0x111111, { ao: false });
     const idx = this.lamps.length;
     const [r, g, b] = LAMP_COLORS[def.color];
     this.lamps.push({ get: def.get, on: new THREE.Color(r, g, b), off: lampOff(def.color), flash: !!def.flash, last: -1 });
@@ -640,7 +682,8 @@ export class PanelKit {
     const w = def.w ?? 0.12;
     const h = def.h ?? 0.042;
     const frame = surfaceFrame(sec, surf, u, v, 0);
-    this.shell.add(box(w + 0.014, h + 0.012, 0.02), _m.makeTranslation(0, 0, 0.01).premultiply(frame), PALETTE.bezel, { ao: false });
+    this.shell.add(rbox(w + 0.016, h + 0.014, 0.02, 0.005), _m.makeTranslation(0, 0, 0.01).premultiply(frame), PALETTE.bezel, { ao: false });
+    this.bezelLip(frame, w, h, 0.02, 0.003, 0x303234);
     const r = this.readAtlas.alloc(Math.round(w * 1300), Math.round(h * 1300));
     _m.makeTranslation(0, 0, 0.0205).premultiply(frame);
     this.readQuads.add(r, w, h, _m);
@@ -667,7 +710,7 @@ export class PanelKit {
   /* ---------------- switches / knobs / lever ---------------- */
   private escutcheon(frame: THREE.Matrix4, title: string, positions: string[], angles: number[], size: number, red = false): void {
     const px = Math.round(size * 1300);
-    const r = this.staticAtlas.alloc(px, px);
+    const r = this.allocStatic(px, px);
     const ctx = this.staticAtlas.ctx;
     const { x, y, w, h } = r;
     ctx.fillStyle = '#141414';
@@ -743,7 +786,7 @@ export class PanelKit {
     const ticks = def.ticks ?? [def.fmt(def.min), def.fmt(def.max)];
     // escutcheon with dial ticks
     const px = Math.round(size * 1300);
-    const r = this.staticAtlas.alloc(px, px);
+    const r = this.allocStatic(px, px);
     const ctx = this.staticAtlas.ctx;
     ctx.fillStyle = '#141414';
     ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -891,25 +934,29 @@ export class PanelKit {
     shell.name = 'boards-shell';
     scene.add(shell);
 
-    // crop the static atlas to the used height (saves GPU memory) and remap v
-    const A = this.staticAtlas;
-    const usedH = Math.min(A.H, Math.ceil(A.usage() * A.H / 256) * 256);
-    const crop = document.createElement('canvas');
-    crop.width = A.W;
-    crop.height = usedH;
-    crop.getContext('2d')!.drawImage(A.canvas, 0, 0);
-    const tex = new THREE.CanvasTexture(crop);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 8;
-    A.tex.dispose();
-    const staticAtlasMat = new THREE.MeshLambertMaterial({ map: tex, vertexColors: true });
-    const labels = this.staticQuads.build(staticAtlasMat);
-    const uvA = labels.geometry.getAttribute('uv') as THREE.BufferAttribute;
-    const k = A.H / usedH;
-    for (let i = 0; i < uvA.count; i++) uvA.setY(i, 1 - (1 - uvA.getY(i)) * k);
-    A.canvas.width = A.canvas.height = 1; // free the big canvas
-    labels.name = 'labels';
-    scene.add(labels);
+    // crop each static atlas page to its used height (saves GPU memory) and remap v
+    let staticAtlasMat!: THREE.MeshLambertMaterial;
+    this.pages.forEach((pg, pi) => {
+      const A = pg.atlas;
+      const usedH = Math.min(A.H, Math.max(256, Math.ceil((A.usage() * A.H) / 256) * 256));
+      const crop = document.createElement('canvas');
+      crop.width = A.W;
+      crop.height = usedH;
+      crop.getContext('2d')!.drawImage(A.canvas, 0, 0);
+      const tex = new THREE.CanvasTexture(crop);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      A.tex.dispose();
+      const mat = new THREE.MeshLambertMaterial({ map: tex, vertexColors: true });
+      if (pi === 0) staticAtlasMat = mat;
+      const labels = pg.quads.build(mat);
+      const uvA = labels.geometry.getAttribute('uv') as THREE.BufferAttribute;
+      const k = A.H / usedH;
+      for (let i = 0; i < uvA.count; i++) uvA.setY(i, 1 - (1 - uvA.getY(i)) * k);
+      A.canvas.width = A.canvas.height = 1; // free the big canvas
+      labels.name = 'labels-' + pi;
+      scene.add(labels);
+    });
 
     this.readAtlas.tex.anisotropy = 4;
     this.readAtlas.tex.generateMipmaps = false;
@@ -932,9 +979,7 @@ export class PanelKit {
     scene.add(this.needleMesh);
 
     // lamps
-    const lampGeo = new THREE.CylinderGeometry(0.0115, 0.0125, 0.012, 14);
-    lampGeo.rotateX(Math.PI / 2);
-    lampGeo.translate(0, 0, 0.012);
+    const lampGeo = latheZ([[0, 0.006], [0.0125, 0.006], [0.0125, 0.016], [0.011, 0.02], [0.007, 0.0235], [0, 0.0245]], 18);
     this.lampMesh = new THREE.InstancedMesh(lampGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), Math.max(1, this.lamps.length));
     for (let i = 0; i < this.lamps.length; i++) {
       this.lampMesh.setMatrixAt(i, (this.lamps[i] as any).frame);
@@ -968,9 +1013,7 @@ export class PanelKit {
     this.finishInst(this.knobMesh, 'knobs');
     scene.add(this.knobMesh);
 
-    const bg = new THREE.CylinderGeometry(0.0175, 0.019, 0.02, 20);
-    bg.rotateX(Math.PI / 2);
-    bg.translate(0, 0, 0.01);
+    const bg = latheZ([[0, 0], [0.019, 0], [0.019, 0.004], [0.0178, 0.006], [0.0178, 0.017], [0.0165, 0.0195], [0.012, 0.021], [0, 0.0215]], 32);
     this.buttonMesh = new THREE.InstancedMesh(bg, new THREE.MeshLambertMaterial({ color: 0xffffff }), Math.max(1, this.buttons.length));
     for (let i = 0; i < this.buttons.length; i++) this.buttonMesh.setColorAt(i, _col.set(this.buttonColors[i]));
     this.finishInst(this.buttonMesh, 'buttons');
@@ -1147,6 +1190,15 @@ export class PanelKit {
   }
 }
 
+/** lathe profile [[r, z]...] revolved around +z (faces the viewer on a panel) */
+function latheZ(profile: [number, number][], seg: number): THREE.BufferGeometry {
+  const g = new THREE.LatheGeometry(profile.map(([r, z]) => new THREE.Vector2(r, z)), seg);
+  g.rotateX(Math.PI / 2);
+  const n = g.index ? g.toNonIndexed() : g;
+  n.deleteAttribute('uv');
+  return n;
+}
+
 function setVC(g: THREE.BufferGeometry, v: number): THREE.BufferGeometry {
   const n = g.getAttribute('position').count;
   g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(v), 3));
@@ -1156,7 +1208,7 @@ function setVC(g: THREE.BufferGeometry, v: number): THREE.BufferGeometry {
 /** vertex color 1 = take instance color, 2 = always white (index stripes) */
 function buildHandleGeo(): THREE.BufferGeometry {
   const hub = setVC(zcyl(0.016, 0.017, 0.016, 14), 1);
-  const grip = box(0.02, 0.085, 0.024);
+  const grip = rbox(0.02, 0.085, 0.024, 0.007, 2).clone();
   grip.translate(0, 0.012, 0.028);
   setVC(grip, 1);
   const stripe = box(0.005, 0.03, 0.002);
@@ -1167,8 +1219,8 @@ function buildHandleGeo(): THREE.BufferGeometry {
 
 function buildKnobGeo(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-  const body = zcyl(0.022, 0.025, 0.026, 22);
-  const skirt = zcyl(0.03, 0.03, 0.006, 22);
+  const body = latheZ([[0, 0], [0.025, 0.006], [0.0235, 0.022], [0.021, 0.026], [0, 0.027]], 32);
+  const skirt = latheZ([[0, 0], [0.031, 0], [0.031, 0.004], [0.026, 0.007], [0, 0.007]], 32);
   const notch = box(0.004, 0.018, 0.003);
   notch.translate(0, 0.011, 0.0275);
   const setC = (g: THREE.BufferGeometry, v: number) => {

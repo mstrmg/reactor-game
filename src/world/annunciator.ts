@@ -13,7 +13,7 @@ import { BOARD_TOP, HALF_W, Section, PanelKit, surfaceFrame } from './panel';
 const COLS = 10;
 const ROWS = 3;
 const TILE_W = 0.205;
-const TILE_H = 0.092;
+const TILE_H = 0.096; // matches the 128x60 atlas cell aspect
 const GAP = 0.012;
 const CELL_W = 128;
 const CELL_H = 60;

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import type { PlantState } from '../sim/types';
 import { PanelKit, Section, HALF_W, RF } from './panel';
 import { DEG, FONT, GeoBucket, box, cyl, fitText, plane, zcyl } from './util';
+import { furnish } from './props';
 
 export const ROOM = { x0: -10.5, x1: 10.5, z0: -9.4, z1: 8.6, h: 3.5 };
 
@@ -212,52 +213,9 @@ export function buildRoom(kit: PanelKit, scene: THREE.Scene, sections: Section[]
   kit.labelAt(new THREE.Matrix4().makeTranslation(-3.2, 2.95, R.z0 + 0.02), 'UNIT 2  MAIN CONTROL ROOM', 3.0, 0.32, 'black', 400);
   kit.labelAt(new THREE.Matrix4().makeTranslation(3.2, 2.95, R.z0 + 0.02), 'THINK SAFETY · CONSERVATIVE DECISIONS', 3.0, 0.24, 'white', 400);
 
-  /* ---------- back panel row (along back wall, facing -z) ---------- */
-  const bpNames = ['RADIATION MONITORING', 'ELECTRICAL DISTRIBUTION', '4160V BUS', 'CTMT HVAC', 'COMPONENT COOLING', 'SERVICE WATER', 'FIRE PROTECTION'];
-  const bpW = 1.6;
-  const n = bpNames.length;
-  const x0 = -((n - 1) * bpW) / 2;
-  const bpRegion = drawBackPanelFace(kit);
-  for (let i = 0; i < n; i++) {
-    const x = x0 + i * bpW;
-    const z = R.z1 - 0.45;
-    B.add(box(bpW - 0.02, 2.3, 0.8), M(x, 1.15, z), 0x8fbfa8);
-    B.add(box(bpW - 0.02, 0.1, 0.8), M(x, 0.05, z), 0x2a2826);
-    // face texture (rotated to face -z)
-    const f = new THREE.Matrix4().makeRotationY(Math.PI).setPosition(x, 1.3, z - 0.402);
-    kit.staticQuads.add(bpRegion, bpW - 0.16, 1.6, f);
-    kit.labelAt(new THREE.Matrix4().makeRotationY(Math.PI).setPosition(x, 2.2, z - 0.403), bpNames[i], bpW - 0.3, 0.09, 'black', 600);
-    addCol(x, z, bpW / 2, 0.42);
-  }
-
-  /* ---------- supervisor desk ---------- */
-  const deskZ = 2.6;
-  B.add(box(2.4, 0.05, 0.9), M(0, 0.76, deskZ), 0x6b5a48);
-  B.add(box(2.36, 0.68, 0.04), M(0, 0.4, deskZ + 0.42), 0x3c3a38);
-  B.add(box(0.04, 0.74, 0.86), M(-1.17, 0.37, deskZ), 0x3c3a38);
-  B.add(box(0.04, 0.74, 0.86), M(1.17, 0.37, deskZ), 0x3c3a38);
-  B.add(box(0.45, 0.7, 0.8), M(0.85, 0.37, deskZ), 0x55524c); // drawer pedestal
-  for (let k = 0; k < 3; k++) B.add(box(0.36, 0.005, 0.01), M(0.85, 0.22 + k * 0.22, deskZ - 0.405), 0x999999);
-  addCol(0, deskZ, 1.22, 0.47);
-  // supervisor monitor (mirrors CRT-B)
-  B.add(box(0.5, 0.42, 0.42), M(-0.4, 1.0, deskZ + 0.1, Math.PI), 0x3a3c3a);
-  B.add(box(0.3, 0.03, 0.3), M(-0.4, 0.795, deskZ + 0.1), 0x2a2c2a);
-  const supScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.3), new THREE.MeshBasicMaterial({ map: extraTex }));
-  (supScreen.material as THREE.MeshBasicMaterial).color.setScalar(1.15);
-  supScreen.matrixAutoUpdate = false;
-  supScreen.matrix.copy(M(-0.4, 1.0, deskZ - 0.115, Math.PI));
-  supScreen.name = 'supervisor-screen';
-  scene.add(supScreen);
-  // phone
-  B.add(box(0.22, 0.07, 0.2), M(0.35, 0.82, deskZ - 0.15, 0.2), 0xcfc6a8);
-  B.add(box(0.22, 0.04, 0.06), M(0.35, 0.875, deskZ - 0.2, 0.2), 0xbfb698);
-  B.add(box(0.03, 0.09, 0.012), M(0.35, 0.95, deskZ - 0.35, 0.2), 0x222222, { ao: false }); // cord-ish
-  // binders on desk
-  const binderCols = [0x8a2a22, 0x1e3e7a, 0x2d6a3a, 0xc9a227, 0x1e3e7a];
-  binderCols.forEach((c, i) => B.add(box(0.06, 0.3, 0.26), M(-1.0 + i * 0.065, 0.93, deskZ + 0.25), c));
-  // mug
-  B.add(cyl(0.04, 0.036, 0.1, 14), M(0.7, 0.835, deskZ - 0.2), 0xe8e2d4);
-  B.add(new THREE.TorusGeometry(0.03, 0.009, 6, 12).toNonIndexed().deleteAttribute('uv'), M(0.745, 0.84, deskZ - 0.2, 0), 0xe8e2d4);
+  /* ---------- furniture, cabinets, office, props (props.ts) ---------- */
+  const furn = furnish(kit, scene, colliders);
+  const supScreen = furn.supervisorScreen(extraTex);
   // second mug on the reactor control bench
   {
     const s4 = sections[4];
@@ -273,69 +231,10 @@ export function buildRoom(kit: PanelKit, scene: THREE.Scene, sections: Section[]
     const paper = new THREE.Matrix4().makeTranslation(0, 0.007, 0.01).premultiply(m);
     B.add(box(0.21, 0.004, 0.27), paper, 0xf2f0e8);
     B.add(box(0.1, 0.012, 0.03), new THREE.Matrix4().makeTranslation(0, 0.012, -0.13).premultiply(m), 0xb8b8b8);
-    const lab = new THREE.Matrix4().makeRotationX(-Math.PI / 2).setPosition(0, 0.0095, 0.02).premultiply(m);
+    const lab = new THREE.Matrix4().makeRotationX(-Math.PI / 2).setPosition(0, 0.0108, 0.02).premultiply(m);
     kit.labelAt(lab, 'GOP-102\nREACTOR STARTUP\n1. VERIFY SDM\n2. WITHDRAW SA,SB\n3. ESTABLISH CRIT', 0.19, 0.18, 'white', 900);
   }
 
-  /* ---------- chairs ---------- */
-  const chair = (x: number, z: number, ry: number) => {
-    B.add(box(0.5, 0.08, 0.48), M(x, 0.48, z, ry), 0x2c3440);
-    const bx = x + Math.sin(ry) * 0.24;
-    const bz = z + Math.cos(ry) * 0.24;
-    B.add(box(0.46, 0.5, 0.07), M(bx, 0.82, bz, ry), 0x2c3440);
-    B.add(cyl(0.025, 0.025, 0.4, 8), M(x, 0.26, z), 0x777777);
-    for (let k = 0; k < 5; k++) {
-      const a = ry + (k * Math.PI * 2) / 5;
-      B.add(box(0.035, 0.03, 0.3), M(x + Math.sin(a) * 0.15, 0.06, z + Math.cos(a) * 0.15, a), 0x222222);
-    }
-  };
-  chair(-1.4, -5.7, 0.2);
-  chair(1.2, -5.6, -0.3);
-  chair(-4.4, -3.8, 1.0);
-  chair(0.2, deskZ + 0.95, 0);
-
-  /* ---------- procedures bookshelf (left wall) ---------- */
-  {
-    const x = R.x0 + 0.25;
-    const z = -1.5;
-    B.add(box(0.45, 1.9, 2.2), M(x, 0.95, z), 0x6b5a48);
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    for (let shelf = 0; shelf < 4; shelf++) {
-      const y = 0.32 + shelf * 0.44;
-      B.add(box(0.42, 0.36, 2.1), M(x + 0.02, y + 0.2, z), 0x2a241e); // cavity shadow
-      let zz = z - 1.0;
-      while (zz < z + 0.95) {
-        const w = 0.05 + rnd() * 0.04;
-        const cols = [0x8a2a22, 0x1e3e7a, 0x2d6a3a, 0xc9a227, 0xe8e2d4, 0x555555];
-        B.add(box(0.28, 0.3 + rnd() * 0.04, w - 0.005), M(x + 0.08, y + 0.17, zz + w / 2), cols[Math.floor(rnd() * cols.length)]);
-        zz += w;
-      }
-    }
-    kit.labelAt(new THREE.Matrix4().makeRotationY(Math.PI / 2).setPosition(x + 0.235, 2.02, z), 'EMERGENCY OPERATING PROCEDURES', 1.6, 0.12, 'red', 500);
-    addCol(x, z, 0.25, 1.12);
-  }
-
-  /* ---------- interior window with blinds (left wall) ---------- */
-  {
-    const x = R.x0 + 0.03;
-    const z = 4.6;
-    B.add(box(0.08, 1.32, 2.62), M(x, 1.6, z), 0x5a5148);
-    B.add(box(0.02, 1.2, 2.5), M(x + 0.02, 1.6, z), 0x1a2228, { ao: false });
-    for (let k = 0; k < 22; k++) B.add(box(0.06, 0.008, 2.46), M(x + 0.05, 1.04 + k * 0.054, z, 0, 0, 0.5), 0xcfcab8, { ao: false });
-  }
-
-  /* ---------- door (right wall) + exit sign + extinguisher ---------- */
-  {
-    const x = R.x1 - 0.03;
-    const z = 5.0;
-    B.add(box(0.1, 2.25, 1.15), M(x, 1.125, z), 0x3a3a38);
-    B.add(box(0.06, 2.12, 1.0), M(x - 0.03, 1.06, z), 0x6e4e32);
-    B.add(box(0.03, 0.6, 0.18), M(x - 0.06, 1.55, z + 0.2), 0x1a2228, { ao: false });
-    B.add(box(0.06, 0.04, 0.16), M(x - 0.08, 1.0, z - 0.38), 0xb8b8b8, { ao: false });
-    B.add(box(0.06, 0.2, 0.06), M(x - 0.04, 0.45, z + 0.95), 0xa01c14);
-    B.add(cyl(0.08, 0.08, 0.5, 12), M(x - 0.12, 0.62, z + 0.95), 0xb81e14);
-  }
   const exitTex = (() => {
     const c = document.createElement('canvas');
     c.width = 256;
@@ -351,7 +250,7 @@ export function buildRoom(kit: PanelKit, scene: THREE.Scene, sections: Section[]
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
   })();
-  const exitSign = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.16), new THREE.MeshBasicMaterial({ map: exitTex }));
+  const exitSign = new THREE.Mesh(new THREE.PlaneGeometry(0.4267, 0.16), new THREE.MeshBasicMaterial({ map: exitTex }));
   (exitSign.material as THREE.MeshBasicMaterial).color.setScalar(1.6);
   exitSign.matrixAutoUpdate = false;
   exitSign.matrix.copy(M(R.x1 - 0.06, 2.45, 5.0, -Math.PI / 2));
@@ -430,70 +329,6 @@ function drawClockFace(ctx: CanvasRenderingContext2D, r: { x: number; y: number;
   }
   ctx.font = `bold ${Math.round(w * 0.04)}px ${FONT}`;
   ctx.fillText('PLANT TIME', cx, cy + w * 0.17);
-}
-
-function drawBackPanelFace(kit: PanelKit) {
-  const r = kit.staticAtlas.alloc(560, 640);
-  const c = kit.staticAtlas.ctx;
-  const { x, y, w, h } = r;
-  c.fillStyle = '#8fbfa8';
-  c.fillRect(x, y, w, h);
-  let seed = 42;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  // row of edgewise meters
-  for (let i = 0; i < 8; i++) {
-    const mx = x + 20 + i * 66;
-    c.fillStyle = '#1b1c1e';
-    c.fillRect(mx, y + 30, 46, 150);
-    c.fillStyle = '#f1ecdc';
-    c.fillRect(mx + 5, y + 36, 36, 138);
-    c.fillStyle = '#111';
-    for (let k = 0; k < 6; k++) c.fillRect(mx + 22, y + 46 + k * 24, 14, 2);
-    c.fillRect(mx + 8, y + 50 + rnd() * 110, 28, 3);
-    c.fillStyle = '#151515';
-    c.fillRect(mx - 2, y + 186, 50, 16);
-  }
-  // lamp matrix
-  for (let r2 = 0; r2 < 3; r2++)
-    for (let i = 0; i < 10; i++) {
-      const lx = x + 40 + i * 52;
-      const ly = y + 250 + r2 * 60;
-      c.fillStyle = '#111';
-      c.beginPath();
-      c.arc(lx, ly, 13, 0, Math.PI * 2);
-      c.fill();
-      const on = rnd() < 0.3;
-      c.fillStyle = on ? (rnd() < 0.5 ? '#ff6050' : '#70f090') : rnd() < 0.5 ? '#4a1a16' : '#1a3a20';
-      c.beginPath();
-      c.arc(lx, ly, 9, 0, Math.PI * 2);
-      c.fill();
-      c.fillStyle = '#151515';
-      c.fillRect(lx - 22, ly + 17, 44, 10);
-    }
-  // switches
-  for (let i = 0; i < 6; i++) {
-    const sx = x + 60 + i * 86;
-    const sy = y + 500;
-    c.fillStyle = '#141414';
-    c.fillRect(sx - 34, sy - 40, 68, 80);
-    c.fillStyle = '#ddd';
-    c.fillRect(sx - 4, sy - 28, 8, 40);
-    c.fillStyle = '#efe9da';
-    c.font = `bold 11px ${FONT}`;
-    c.textAlign = 'center';
-    c.fillText('OFF   ON', sx, sy - 31);
-  }
-  // recorder
-  c.fillStyle = '#2b2e30';
-  c.fillRect(x + 360, y + 560, 170, 70);
-  c.fillStyle = '#f3efe2';
-  c.fillRect(x + 370, y + 568, 150, 54);
-  c.strokeStyle = '#c0281c';
-  c.beginPath();
-  c.moveTo(x + 370, y + 600);
-  for (let i = 0; i < 150; i += 5) c.lineTo(x + 370 + i, y + 590 + rnd() * 20);
-  c.stroke();
-  return r;
 }
 
 import * as BGU from 'three/addons/utils/BufferGeometryUtils.js';

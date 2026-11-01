@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 export const DEG = Math.PI / 180;
 const _c = new THREE.Color();
@@ -19,10 +20,22 @@ function strip(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return n;
 }
 export const box = (w: number, h: number, d: number) => strip(new THREE.BoxGeometry(w, h, d));
-export const cyl = (rt: number, rb: number, h: number, seg = 16) =>
+/** rounded/bevelled box (cached per size) */
+const _rcache = new Map<string, THREE.BufferGeometry>();
+export function rbox(w: number, h: number, d: number, r = 0.012, seg = 1): THREE.BufferGeometry {
+  const rr = Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4);
+  const k = `${w.toFixed(4)},${h.toFixed(4)},${d.toFixed(4)},${rr.toFixed(4)},${seg}`;
+  let g = _rcache.get(k);
+  if (!g) {
+    g = strip(new RoundedBoxGeometry(w, h, d, seg, Math.max(1e-4, rr)));
+    _rcache.set(k, g);
+  }
+  return g;
+}
+export const cyl = (rt: number, rb: number, h: number, seg = 20) =>
   strip(new THREE.CylinderGeometry(rt, rb, h, seg));
 /** cylinder whose axis is +z (faces the viewer when placed on a panel), base at z=0 */
-export function zcyl(rt: number, rb: number, h: number, seg = 16): THREE.BufferGeometry {
+export function zcyl(rt: number, rb: number, h: number, seg = 24): THREE.BufferGeometry {
   const g = cyl(rt, rb, h, seg);
   g.rotateX(Math.PI / 2);
   g.translate(0, 0, h / 2);
@@ -86,6 +99,7 @@ export class GeoBucket {
 /* Canvas atlas with a simple shelf packer                              */
 /* ------------------------------------------------------------------ */
 export interface Region {
+  page?: number;
   x: number;
   y: number;
   w: number;
@@ -124,7 +138,7 @@ export class CanvasAtlas {
     const p = this.pad;
     const W2 = w + p * 2;
     const H2 = h + p * 2;
-    let shelf = this.shelves.find((sh) => sh.h >= H2 && sh.h <= H2 * 1.35 + 4 && sh.x + W2 <= this.W);
+    let shelf = this.shelves.find((sh) => sh.h >= H2 && sh.h <= H2 * 1.5 + 4 && sh.x + W2 <= this.W);
     if (!shelf) {
       if (this.cy + H2 > this.H) {
         if (!this.overflow) console.warn('[world] atlas overflow', this.W, this.H, 'req', w, h);
@@ -148,6 +162,11 @@ export class CanvasAtlas {
       v1: 1 - y / this.H,
       v0: 1 - (y + h) / this.H,
     };
+  }
+  canFit(w: number, h: number): boolean {
+    const W2 = Math.ceil(w) + this.pad * 2;
+    const H2 = Math.ceil(h) + this.pad * 2;
+    return this.shelves.some((sh) => sh.h >= H2 && sh.h <= H2 * 1.5 + 4 && sh.x + W2 <= this.W) || this.cy + H2 <= this.H;
   }
   /** fraction of atlas height used */
   usage(): number {

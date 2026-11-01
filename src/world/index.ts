@@ -90,7 +90,7 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
   kit.finalize(scene, shellMat);
   scene.add(ann.mesh);
   for (const m of layout.displayMeshes) scene.add(m);
-  if (kit.staticAtlas.overflow) console.warn('[world] static atlas overflowed — enlarge it');
+  
   // everything static: freeze matrices
   scene.traverse((o) => {
     if (o !== room.beacon && o.parent !== room.beacon) {

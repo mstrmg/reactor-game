@@ -11,6 +11,8 @@ import { ROOM, type Collider } from './room';
 const EYE = 1.65;
 const RADIUS = 0.3;
 const REACH = 3.2;
+/** radius of the bench front line (RF - 0.67) minus the player radius */
+const INNER_R = 7.4 - 0.68 - RADIUS;
 const BASE_FOV = 70;
 const FOCUS_FOV = 26;
 
@@ -251,6 +253,14 @@ export class Player {
         // back to world (rotation by +rot)
         this.pos.x = c.x + nlx * c.c + nlz * c.s;
         this.pos.z = c.z - nlx * c.s + nlz * c.c;
+      }
+    }
+    // never behind the horseshoe: in the front half of the room stay inside the bench line
+    if (this.pos.z < 0.05) {
+      const r = Math.hypot(this.pos.x, this.pos.z);
+      if (r > INNER_R) {
+        this.pos.x *= INNER_R / r;
+        this.pos.z *= INNER_R / r;
       }
     }
     this.pos.x = Math.max(ROOM.x0 + RADIUS, Math.min(ROOM.x1 - RADIUS, this.pos.x));
