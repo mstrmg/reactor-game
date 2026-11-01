@@ -1,0 +1,29 @@
+{
+  "name": "reactor-game",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "eslint": "^10.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vite-plugin-glsl": "^1.6.2",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "lil-gui": "^0.21.0",
+    "stats-gl": "^4.2.3",
+    "three": "^0.187.0",
+    "three-mesh-bvh": "^0.9.17",
+    "tone": "^15.1.22",
+    "troika-three-text": "^0.52.5"
+  }
+}
