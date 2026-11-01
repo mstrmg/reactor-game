@@ -19,6 +19,8 @@ import { Annunciators } from './annunciator';
 import { buildRoom } from './room';
 import { buildAuxPanels } from './auxpanels';
 import { Player } from './player';
+import { buildPhones } from './phone';
+import { ReactorView } from './reactor';
 
 export interface WorldApi {
   update(dt: number): void;
@@ -88,14 +90,17 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
   const ann = new Annunciators(kit, layout.sections, layout.firstOutAt);
   const room = buildRoom(kit, scene, layout.sections, layout.crtB.tex);
   buildAuxPanels(kit, sim, room.workPanels);
+  // telephones to the reactor building (the call itself is run by the UI on 'phone-pickup')
+  const phone = buildPhones(kit, layout.sections[4], () => {});
   const shellMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   kit.finalize(scene, shellMat);
   scene.add(ann.mesh);
   for (const m of layout.displayMeshes) scene.add(m);
+  scene.add(phone.handset);
   
   // everything static: freeze matrices
   scene.traverse((o) => {
-    if (o !== room.beacon && o.parent !== room.beacon) {
+    if (o !== room.beacon && o.parent !== room.beacon && o !== phone.handset) {
       o.matrixAutoUpdate = false;
     }
   });
@@ -108,13 +113,15 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
   let bloomOn = true;
   let composer: EffectComposer | null = null;
   let bloom: UnrealBloomPass | null = null;
+  let renderPass: RenderPass | null = null;
   function buildComposer() {
     const size = renderer.getSize(new THREE.Vector2());
     const pr = renderer.getPixelRatio();
     // high-DPI screens are already supersampled; skip MSAA there to keep fill-rate sane
     const rt = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: pr >= 1.4 ? 0 : 4 });
     composer = new EffectComposer(renderer, rt);
-    composer.addPass(new RenderPass(scene, camera));
+    renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
     bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.55, 0.45, 0.92);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
@@ -127,12 +134,62 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    reactor?.resize(w / h);
     if (composer) {
       composer.setPixelRatio(renderer.getPixelRatio());
       composer.setSize(w, h);
       bloom?.resolution.set(w / 2, h / 2);
     }
   }
+  /* ---------------- remote views (phone call, reactor cam, tour) ---------------- */
+  // The reactor building scene is built lazily on first use and cached for the session.
+  let reactor: ReactorView | null = null;
+  let viewMode: 'control-room' | 'reactor-cam' | 'tour' = 'control-room';
+  let inCall = false;
+  const remoteActive = () => inCall || viewMode !== 'control-room';
+  function syncRemote() {
+    const on = remoteActive();
+    player.setSuspended(on);
+    phone.setLifted(on);
+  }
+  function setRenderTarget() {
+    const r = viewMode !== 'control-room' && reactor ? reactor : null;
+    if (renderPass) {
+      renderPass.scene = r ? r.scene : scene;
+      renderPass.camera = r ? r.camera : camera;
+    }
+  }
+  bus.on('phone-pickup', () => {
+    inCall = true;
+    syncRemote();
+  });
+  bus.on('view-mode', (m) => {
+    viewMode = m;
+    if (m === 'control-room') {
+      inCall = false;
+      reactor?.setEnabled(false);
+    } else {
+      if (!reactor) {
+        reactor = new ReactorView(sim, canvas);
+        const w = container.clientWidth || window.innerWidth;
+        const h = container.clientHeight || window.innerHeight;
+        reactor.resize(w / h);
+      }
+      reactor.setEnabled(true);
+      reactor.setMode(m);
+    }
+    setRenderTarget();
+    syncRemote();
+  });
+  bus.on('tour-nav', (d) => reactor?.tourNav(d));
+  // Esc hang-up: the UI ends the call and opens the pause menu without a view change
+  bus.on('pause-changed', (p) => {
+    if (p && inCall && viewMode === 'control-room') {
+      inCall = false;
+      syncRemote();
+    }
+  });
+
   window.addEventListener('resize', resize);
   resize();
   buildComposer();
@@ -242,8 +299,15 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
         fpsAcc = 0;
         fpsN = 0;
       }
-      player.update(dt);
+      phone.update(dt);
       const s = sim.state;
+      if (viewMode !== 'control-room' && reactor) {
+        // remote view: only the reactor scene animates; keep the trend recorders sampling
+        if (s) layout.hist.sample(s);
+        reactor.update(dt, s);
+        return;
+      }
+      player.update(dt);
       if (!s) return;
       kit.update(s, dt, time, true);
       ann.update(s, time, true);
@@ -257,6 +321,7 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
     render() {
       renderer.info.reset();
       if (bloomOn && composer) composer.render();
+      else if (viewMode !== 'control-room' && reactor) renderer.render(reactor.scene, reactor.camera);
       else renderer.render(scene, camera);
       const i = renderer.info.render;
       lastInfo = { calls: i.calls, triangles: i.triangles, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries, fps };
@@ -319,6 +384,6 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
       return true;
     },
   };
-  (api as any)._debug = { renderer, scene, camera, kit, player, ann, layout, room };
+  (api as any)._debug = { renderer, scene, camera, kit, player, ann, layout, room, phone, get reactor() { return reactor; } };
   return api;
 }

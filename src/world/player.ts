@@ -27,6 +27,11 @@ export class Player {
   locked = false;
   focus = false;
   freeInput = false; // debug: accept input without pointer lock
+  /** true while another view (reactor cam / tour) is shown: no FPS input, no picking, lock loss never pauses */
+  suspended = false;
+  /** pointer-lock losses until this time (performance.now ms) are treated as programmatic: no pause */
+  private quietUntil = 0;
+  private expectUnlock = false;
   private keys = new Set<string>();
   private bob = 0;
   private bobAmt = 0;
@@ -55,7 +60,11 @@ export class Player {
       }
       bus.emit('pointer-lock', l);
       if (!l) {
-        // losing the lock (Esc) pauses the game; the UI shows the pause menu
+        // losing the lock (Esc) pauses the game; the UI shows the pause menu —
+        // but not when we released it ourselves, during a phone call or in another view
+        const quiet = this.suspended || this.expectUnlock || performance.now() < this.quietUntil;
+        this.expectUnlock = false;
+        if (quiet) return;
         try {
           if (!this.sim.controls.paused) bus.emit('pause-changed', true);
         } catch {
@@ -108,7 +117,7 @@ export class Player {
     window.addEventListener('blur', () => this.releaseAll());
     this.canvas.addEventListener('click', () => {
       try {
-        if (!this.locked && !this.sim.controls.paused) this.lock();
+        if (!this.locked && !this.suspended && !this.sim.controls.paused) this.lock();
       } catch {
         /* ignore */
       }
@@ -116,7 +125,29 @@ export class Player {
   }
 
   active(): boolean {
-    return this.locked || this.freeInput;
+    return !this.suspended && (this.locked || this.freeInput);
+  }
+
+  /** suppress the pause-on-unlock for a short while (e.g. the UI opens the phone dialogue) */
+  quietFor(ms: number): void {
+    this.quietUntil = performance.now() + ms;
+  }
+
+  setSuspended(on: boolean): void {
+    if (on === this.suspended) return;
+    this.suspended = on;
+    if (on) {
+      this.releaseAll();
+      if (this.target || this.hoverIt) bus.emit('hover', null);
+      this.target = null;
+      this.hoverIt = null;
+      if (document.pointerLockElement === this.canvas) {
+        this.expectUnlock = true;
+        document.exitPointerLock();
+      }
+    } else {
+      this.hoverTimer = 0;
+    }
   }
 
   lock(): void {
@@ -136,7 +167,10 @@ export class Player {
     }
   }
   unlock(): void {
-    if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+    if (document.pointerLockElement === this.canvas) {
+      this.expectUnlock = true;
+      document.exitPointerLock();
+    }
     this.releaseAll();
   }
 
@@ -171,6 +205,7 @@ export class Player {
   }
 
   update(dt: number): void {
+    if (this.suspended) return;
     // ----- movement -----
     const act = this.active();
     let fx = 0;
