@@ -54,7 +54,14 @@ class Bus {
   }
   emit<K extends keyof BusEvents>(k: K, ...args: BusEvents[K] extends void ? [] : [BusEvents[K]]): void {
     const payload = args[0];
-    this.map.get(k)?.forEach((h) => h(payload));
+    this.map.get(k)?.forEach((h) => {
+      try {
+        h(payload);
+      } catch (err) {
+        // One broken listener must not stop the others or the frame loop.
+        console.error(`[bus] '${String(k)}' handler failed`, err);
+      }
+    });
   }
 }
 
