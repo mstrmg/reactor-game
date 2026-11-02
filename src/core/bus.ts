@@ -23,12 +23,24 @@ export interface BusEvents {
    *  'control-room' = normal FPS; 'reactor-cam' = colleague's view on the reactor bridge;
    *  'tour' = guided tour inside the reactor. In non-control-room modes the pointer is
    *  unlocked (so buttons are clickable) and losing pointer lock must NOT pause the game. */
-  'view-mode': 'control-room' | 'reactor-cam' | 'tour';
+  'view-mode': 'control-room' | 'reactor-cam' | 'tour' | 'outside';
   /** ui -> world: next / previous tour stop */
   'tour-nav': 1 | -1;
   /** world -> ui: tour arrived at a stop (ui shows the caption with typewriter + babble) */
   'tour-stop': { index: number; count: number; title: string; text: string };
+
+  // ---- Crew ----
+  /** ui -> world: animate a crew NPC. board = section placard name the member should go to/operate
+   *  (e.g. 'FEEDWATER & STEAM DUMP'), or null to return to their home position. */
+  'crew-activity': { member: CrewId; board: string | null; state: 'idle' | 'walking' | 'operating' | 'talking' };
+  /** ui -> world: crew member speaks (world can turn their head / bob; ui shows the bubble) */
+  'crew-say': { member: CrewId; text: string };
+  /** world -> ui: player clicked / pressed F on a crew NPC (ui opens the order menu for that member) */
+  'crew-clicked': { member: CrewId };
 }
+
+/** SRO = shift supervisor, RO = reactor operator, BOP = balance-of-plant operator, FIELD = field operator (off-screen, phone) */
+export type CrewId = 'SRO' | 'RO' | 'BOP' | 'FIELD';
 
 type Handler<T> = (payload: T) => void;
 

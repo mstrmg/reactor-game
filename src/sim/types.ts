@@ -319,6 +319,11 @@ export interface PlantState {
     timeAtPowerS: number;
   };
 
+  /** Grid dispatch and plant economics (filled by src/sim/economy.ts). */
+  grid?: GridState;
+  /** Radioactive release and off-site consequences (filled by src/sim/release.ts). Emergent from fuel damage + barrier integrity. */
+  release?: ReleaseState;
+
   /** ADDITIVE (optional) extra indications published by the sim. Safe to ignore. */
   ext?: PlantExt;
   /** ADDITIVE (optional) balance-of-plant indications. */
@@ -399,6 +404,59 @@ export interface PlantExt {
   shutdownMarginPcm: number; // positive = subcritical margin if tripped now
 }
 
+export interface DispatchRequest {
+  id: number;
+  /** requested net electrical output, MWe */
+  targetMW: number;
+  /** sim time the request was made / must be met by (s) */
+  issuedAt: number;
+  deadline: number;
+  /** tolerance band, MWe */
+  toleranceMW: number;
+  reason: string; // e.g. 'Evening peak', 'Wind farm dropped off', 'Night valley'
+  status: 'pending' | 'met' | 'missed' | 'cancelled';
+  /** $ bonus if met, penalty if missed */
+  bonus: number;
+  penalty: number;
+}
+
+export interface GridState {
+  frequencyHz: number; // ~60.00, sags when the unit trips at load
+  pricePerMWh: number; // $/MWh, varies with time of day / demand
+  cash: number; // $ running total for this shift (starts 0)
+  revenue: number; // $ earned from MWh sold
+  costs: number; // $ fuel + O&M + trip costs + penalties + damage repairs
+  /** last few itemised transactions for the UI ledger (most recent first, ≤ 20) */
+  ledger: { t: number; label: string; amount: number }[];
+  dispatch: DispatchRequest | null; // active request, if any
+  dispatchHistory: DispatchRequest[]; // completed ones (≤ 20)
+  /** simulated clock-of-day for the grid (hours 0..24, starts at shift start e.g. 07:00) */
+  hourOfDay: number;
+}
+
+export interface ReleaseState {
+  /** cumulative curies released to the environment, by group */
+  nobleGasCi: number;
+  iodineCi: number;
+  cesiumCi: number;
+  /** current release rate, Ci/s (all groups) */
+  rateCiPerS: number;
+  /** containment atmosphere inventory (Ci) — what's waiting to leak */
+  containmentCi: number;
+  /** pathway currently releasing, if any */
+  pathway: 'none' | 'containment-leak' | 'containment-failure' | 'sg-tube-steam' | 'vent' | 'direct';
+  windFromDeg: number; // meteorological wind direction (from), degrees
+  windSpeedMps: number;
+  stabilityClass: 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
+  /** projected dose at the site boundary (rem, TEDE) and at 10 miles */
+  siteBoundaryDoseRem: number;
+  tenMileDoseRem: number;
+  /** emergency classification (NUREG-0654 style) */
+  emergencyClass: 'none' | 'unusual-event' | 'alert' | 'site-area-emergency' | 'general-emergency';
+  /** radius (miles) of recommended evacuation, 0 if none */
+  evacuationRadiusMi: number;
+}
+
 /** Events the sim emits each step (drain with ReactorSim.drainEvents()). */
 export type SimEvent =
   | { type: 'alarm'; alarm: Alarm } // new alarm came in
@@ -410,7 +468,10 @@ export type SimEvent =
   | { type: 'turbine-trip' }
   | { type: 'catastrophe'; kind: NonNullable<PlantState['catastrophe']>['kind'] }
   | { type: 'meltdown' }
-  | { type: 'message'; text: string }; // generic operator log line
+  | { type: 'message'; text: string } // generic operator log line
+  | { type: 'dispatch'; request: DispatchRequest } // new / updated dispatcher request
+  | { type: 'money'; label: string; amount: number } // notable transaction (trip cost, bonus, penalty)
+  | { type: 'emergency-class'; level: ReleaseState['emergencyClass'] };
 
 /** Public API of src/sim/ReactorSim.ts */
 export interface ReactorSimApi {

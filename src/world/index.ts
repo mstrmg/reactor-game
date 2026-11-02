@@ -164,6 +164,7 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
     syncRemote();
   });
   bus.on('view-mode', (m) => {
+    if (m === 'outside') return; // TODO(world): exterior aftermath view
     viewMode = m;
     if (m === 'control-room') {
       inCall = false;
