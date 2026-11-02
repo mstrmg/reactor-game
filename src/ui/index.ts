@@ -10,6 +10,9 @@ import { CATASTROPHE_TITLE, SCENARIOS, TRIP_SHORT, faultLabel, tripLabel } from 
 import { KEYS_UI, KEYS_WORLD, PRIMER } from './content';
 import { RUNNING_CHECKS, STARTUP, type ProcStep } from './procedures';
 import { createRemote } from './remote';
+import { createEconomy, money } from './economy';
+import { createCrew } from './crew';
+import { createAftermath, EC_TITLE, fmtCi, totalCi } from './aftermath';
 import { alarmHelp, faultHelp, relatedValues, tripAdvice } from './alarmHelp';
 
 export interface UIApi {
@@ -172,7 +175,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       <div class="cell cell--status" data-ref="statusCell"><span class="k">Reactor</span><span class="v" data-ref="status">—</span></div>
       <div class="cell cell--alm" data-ref="almCell"><span class="k">Alarms</span><span class="v" data-ref="alm">0</span></div>
     </div>
-    <div class="hint" data-ref="hint">E alarm help · Tab procedure · Z zoom · H controls · [ ] time</div>
+    <div class="hint" data-ref="hint">E alarm help · O crew orders · Tab procedure · Z zoom · H controls · [ ] time</div>
     <div class="mute" data-ref="mute" hidden>Sound off (M)</div>
     <div class="toast" data-ref="toast" hidden></div>
     <ol class="oplog" data-ref="oplog" aria-live="polite"></ol>
@@ -388,6 +391,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
         <button class="row" data-act="log">Plant logbook <kbd>L</kbd></button>
         <button class="row" data-act="help">Controls <kbd>H</kbd></button>
         <button class="row" data-act="primer">Reactor primer</button>
+        <button class="row" data-act="chatter">Crew chatter: <b data-ref="chat"></b></button>
         <button class="row" data-act="restart">Restart this scenario</button>
         <button class="row" data-act="title">Change scenario</button>
       </div>
@@ -406,6 +410,10 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       else if (a === 'log') setSheet(sheet === 'log' ? 'none' : 'log');
       else if (a === 'help') setSheet(sheet === 'help' ? 'none' : 'help');
       else if (a === 'primer') setSheet(sheet === 'primer' ? 'none' : 'primer');
+      else if (a === 'chatter') {
+        crew.cycleChatter();
+        syncChatter();
+      }
       else if (a === 'restart') startGame(scenario, randomFaults);
       else if (a === 'title') showTitle();
     }),
@@ -437,6 +445,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       <ol class="report__seq" data-ref="oSeq"></ol>
       <div class="report__btns">
         <button class="pushbtn pushbtn--sm" data-ref="oRestart"><span class="pushbtn__lens">Try again</span></button>
+        <button class="link" data-ref="oCam" hidden>Back to the exterior cam</button>
         <button class="link" data-ref="oTitle">Choose another scenario</button>
       </div>
     </div>`;
@@ -444,6 +453,12 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   const oR = refs(over);
   oR.oRestart.addEventListener('click', () => startGame(scenario, randomFaults));
   oR.oTitle.addEventListener('click', () => showTitle());
+  oR.oCam.addEventListener('click', () => {
+    over.hidden = true;
+    over.classList.remove('is-report');
+    aftermath.show();
+    if (sim.controls) sim.controls.paused = false;
+  });
 
   // ================= PHONE / REMOTE VIEW =================
   const remote = createRemote(root, sim, {
@@ -458,6 +473,46 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     clock: (t) => fmtClock(t),
   });
 
+  // ================= GRID / ECONOMY, CREW, AFTERMATH =================
+  const econ = createEconomy(root, hud, sim);
+  const crew = createCrew(root, sim, {
+    playing: () => mode === 'playing' && !overAt,
+    hold: () => remote.active() || econ.talking(),
+    nextStep: () => {
+      const it = allSteps.find((x) => x.step.id === currentStepId);
+      return it ? { n: it.n, title: it.step.title, where: it.step.where, control: it.step.control, action: it.step.action } : null;
+    },
+    log: (text) => addLog(st()?.t ?? 0, text, 'info'),
+  });
+  const syncChatter = () => {
+    paR.chat.textContent = { quiet: 'Quiet (emergencies only)', normal: 'Normal', full: 'Full (everything)' }[crew.chatter()];
+  };
+  syncChatter();
+  const aftermath = createAftermath(root, sim, {
+    facts: () => {
+      const s = st();
+      const f = knownFaults[0] ?? null;
+      return {
+        scenario: SCENARIOS.find((x) => x.id === scenario)?.name ?? scenario,
+        initiating: f ? faultLabel(f.id as FaultId) || f.label : null,
+        trips: s?.score.trips ?? 0,
+      };
+    },
+    report: () => showReport(),
+    restart: () => startGame(scenario, randomFaults),
+    clock: (t) => fmtClock(t),
+  });
+  // keep the sim running behind the exterior cam (losing pointer lock pauses it)
+  bus.on('pause-changed', (p) => {
+    if (p && aftermath.active() && !overShown)
+      queueMicrotask(() => {
+        if (sim.controls && aftermath.active() && !overShown) sim.controls.paused = false;
+      });
+  });
+  bus.on('crew-clicked', () => {
+    if (helpIdx >= 0) closeHelp();
+  });
+
   // ================= behaviour =================
   function keysTable(): string {
     const rows = (k: [string, string][]) =>
@@ -470,6 +525,9 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     scenario = sc;
     randomFaults = rf;
     remote.reset();
+    aftermath.reset();
+    econ.reset();
+    crew.reset();
     mode = 'playing';
     log.length = 0;
     latched.clear();
@@ -497,6 +555,9 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
 
   function showTitle() {
     remote.reset();
+    aftermath.reset();
+    econ.reset();
+    crew.reset();
     mode = 'title';
     if (sim.controls) sim.controls.paused = true;
     title.hidden = false;
@@ -521,6 +582,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     if (mode !== 'playing') return;
     awaitLockSince = 0;
     closeHelp();
+    crew.closeMenu();
     if (sim.controls && !sim.controls.paused) bus.emit('pause-changed', true);
     if (sim.controls) sim.controls.paused = true;
     paR.pNote.textContent = note;
@@ -598,6 +660,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   }
 
   function showBanner(head: string, detail: string, ms = 6000) {
+    delete hR.banner.dataset.kind;
     hR.bannerH.textContent = head;
     hR.bannerD.textContent = detail;
     hR.banner.hidden = false;
@@ -655,6 +718,33 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       case 'meltdown':
         addLog(t, 'Core damage in progress', 'trip');
         break;
+      case 'emergency-class': {
+        if (e.level === 'none') break;
+        const big = e.level === 'site-area-emergency' || e.level === 'general-emergency';
+        addLog(t, `EMERGENCY CLASSIFICATION: ${EC_TITLE[e.level]}`, big ? 'trip' : 'alarm');
+        if (!overAt) {
+          const r = st()?.release;
+          const detail =
+            e.level === 'general-emergency'
+              ? `Release in progress · evacuation out to ${Math.round(r?.evacuationRadiusMi || 10)} miles`
+              : e.level === 'site-area-emergency'
+                ? 'Major failure of plant functions · non-essential staff leave the site'
+                : e.level === 'alert'
+                  ? 'Potential substantial degradation of plant safety · state and NRC notified'
+                  : 'Potential degradation of plant safety · notifications in progress';
+          showBanner(EC_TITLE[e.level], detail, 9000);
+          hR.banner.dataset.kind = big ? 'ec-red' : 'ec-amber';
+          dropTime('emergency declared');
+        }
+        break;
+      }
+      case 'money':
+        if (Math.abs(e.amount) >= 1000) addLog(t, `${e.label}: ${money(e.amount, true)}`, e.amount < 0 ? 'warning' : 'info');
+        break;
+      case 'dispatch':
+        if (e.request.status === 'pending') addLog(t, `Dispatch: ${Math.round(e.request.targetMW)} MW net · ${e.request.reason}`, 'info');
+        else if (e.request.status !== 'cancelled') addLog(t, `Dispatch ${e.request.status}: ${Math.round(e.request.targetMW)} MW`, e.request.status === 'met' ? 'info' : 'warning');
+        break;
       case 'catastrophe':
         addLog(t, `${CATASTROPHE_TITLE[e.kind] ?? e.kind}`, 'trip');
         beginGameOver();
@@ -699,13 +789,39 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
     if (overAt) return;
     overAt = performance.now();
     dropTime('plant lost');
+    crew.closeMenu();
+    closeHelp();
     over.hidden = false;
     over.classList.add('is-flash');
     hR.banner.hidden = true;
   }
 
+  /** flash -> exterior cam with radiation map and the news */
+  function startAftermath() {
+    remote.reset();
+    mode = 'over';
+    over.hidden = true;
+    over.classList.remove('is-flash');
+    hud.hidden = true;
+    proc.hidden = true;
+    procOpen = false;
+    root.classList.remove('proc-open');
+    pause.hidden = true;
+    setSheet('none');
+    if (sim.controls) {
+      sim.controls.paused = false;
+      sim.controls.timeScale = 10; // let the release develop while the news rolls
+    }
+    aftermath.start();
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
   function showReport() {
     remote.reset();
+    crew.closeMenu();
+    aftermath.hide();
+    over.hidden = false;
+    oR.oCam.hidden = !aftermath.active();
     overShown = true;
     mode = 'over';
     const s = st();
@@ -728,6 +844,15 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       ['Electricity generated', `${(sc?.mwhGenerated ?? 0).toFixed(0)} MWh`],
       ['Reactor trips', String(sc?.trips ?? 0)],
       ['Fuel damaged', `${((s?.fuelDamage ?? 0) * 100).toFixed(0)} %`],
+      ...econ.summary(s),
+      ...(s?.release
+        ? ([
+            ['Radioactivity released', `${fmtCi(totalCi(s.release))} Ci`],
+            ['Site boundary dose', `${s.release.siteBoundaryDoseRem.toFixed(2)} rem`],
+            ['Emergency class', EC_TITLE[s.release.emergencyClass]],
+            ['Evacuation', s.release.evacuationRadiusMi > 0 ? `${Math.round(s.release.evacuationRadiusMi)} miles` : 'None'],
+          ] as [string, string][])
+        : []),
       ['Scenario', SCENARIOS.find((x) => x.id === scenario)?.name ?? scenario],
     ];
     oR.oStats.innerHTML = stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('');
@@ -750,6 +875,10 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       return;
     }
     if (mode === 'playing' && remote.handleKey(ev)) return;
+    if (mode === 'playing' && !overAt && !remote.active()) {
+      if (crew.handleKey(ev)) return;
+      if (econ.handleKey(ev)) return;
+    }
     switch (ev.code) {
       case 'Tab':
         ev.preventDefault();
@@ -973,6 +1102,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
       .join('');
     sR.sheetBody.innerHTML = `<div class="logbook">
       <div class="logbook__react" data-ref="react">${s ? reactTable(s) : ''}</div>
+      <div class="logbook__ledger">${s ? econ.ledgerHtml(s) : ''}</div>
       <div class="logbook__events"><table class="evt"><thead><tr><th>Time</th><th>Type</th><th>Entry</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="3">No entries yet. Events, alarms and trips are logged here as they happen.</td></tr>'}</tbody></table></div></div>`;
   }
@@ -1003,11 +1133,19 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
   }
 
   // ---------------- frame ----------------
+  let lastUpd = 0;
   return {
     update(dt: number) {
       const now = performance.now();
+      // UI timers run on wall-clock time: main.ts caps dt at 0.1 s, which slows typing and
+      // crew timers to a crawl when the frame rate drops
+      const udt = lastUpd ? Math.min(1, (now - lastUpd) / 1000) : dt;
+      lastUpd = now;
       if (mode === 'title') return;
       remote.update(dt);
+      econ.update(udt);
+      crew.update(udt);
+      aftermath.update(udt);
 
       // pointer lock watchdog (browsers refuse re-lock for ~1 s after Esc)
       if (mode === 'playing' && awaitLockSince && now - awaitLockSince > 1500) {
@@ -1019,7 +1157,7 @@ export function createUI(root: HTMLElement, sim: ReactorSimApi): UIApi {
 
       const s = st();
       if (s?.catastrophe && !overAt) beginGameOver();
-      if (overAt && !overShown && now - overAt > 2600) showReport();
+      if (overAt && !overShown && !aftermath.active() && now - overAt > 3000) startAftermath();
 
       // fade log lines
       const lines = hR.oplog.children;

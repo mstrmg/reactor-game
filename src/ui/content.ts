@@ -25,6 +25,8 @@ export const KEYS_UI: [string, string][] = [
   ['L', 'Plant logbook: every event and the reactivity balance'],
   ['H or F1', 'This controls sheet'],
   ['M', 'Mute or unmute sound'],
+  ['O', 'Crew orders: pick a crew member, then an order with the number keys (Backspace goes back). Or look at a crew member and press F'],
+  ['Space / Enter', 'When the grid dispatcher calls: skip to the next line'],
   ['Phone', 'Use the desk phone to call Dale on the reactor bridge. Space / Enter / click to talk'],
   ['T · B · C', 'Helmet cam: T tours the reactor, B goes back to the control room, C returns to the camera'],
   ['← →', 'Reactor tour: previous / next stop'],

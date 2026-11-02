@@ -21,6 +21,8 @@ import { buildAuxPanels } from './auxpanels';
 import { Player } from './player';
 import { buildPhones } from './phone';
 import { ReactorView } from './reactor';
+import { ExteriorView } from './exterior';
+import { buildCrew } from './crew';
 
 export interface WorldApi {
   update(dt: number): void;
@@ -106,6 +108,9 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
   });
   scene.updateMatrixWorld(true);
 
+  /* ---------------- crew (animated: added after the matrix freeze) ---------------- */
+  const crew = buildCrew(scene, [...layout.sections, ...room.workPanels], room.colliders, kit.interactables);
+
   /* ---------------- player ---------------- */
   const player = new Player(camera, canvas, sim, kit.interactables, room.colliders);
 
@@ -135,6 +140,7 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     reactor?.resize(w / h);
+    exterior?.resize(w / h, h * renderer.getPixelRatio());
     if (composer) {
       composer.setPixelRatio(renderer.getPixelRatio());
       composer.setSize(w, h);
@@ -144,7 +150,11 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
   /* ---------------- remote views (phone call, reactor cam, tour) ---------------- */
   // The reactor building scene is built lazily on first use and cached for the session.
   let reactor: ReactorView | null = null;
-  let viewMode: 'control-room' | 'reactor-cam' | 'tour' = 'control-room';
+  let exterior: ExteriorView | null = null;
+  let viewMode: 'control-room' | 'reactor-cam' | 'tour' | 'outside' = 'control-room';
+  /** the scene/camera currently shown instead of the control room, if any */
+  const remoteView = (): { scene: THREE.Scene; camera: THREE.Camera } | null =>
+    viewMode === 'outside' ? exterior : viewMode !== 'control-room' ? reactor : null;
   let inCall = false;
   const remoteActive = () => inCall || viewMode !== 'control-room';
   function syncRemote() {
@@ -153,7 +163,7 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
     phone.setLifted(on);
   }
   function setRenderTarget() {
-    const r = viewMode !== 'control-room' && reactor ? reactor : null;
+    const r = remoteView();
     if (renderPass) {
       renderPass.scene = r ? r.scene : scene;
       renderPass.camera = r ? r.camera : camera;
@@ -164,11 +174,19 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
     syncRemote();
   });
   bus.on('view-mode', (m) => {
-    if (m === 'outside') return; // TODO(world): exterior aftermath view
     viewMode = m;
     if (m === 'control-room') {
       inCall = false;
       reactor?.setEnabled(false);
+    } else if (m === 'outside') {
+      // exterior aftermath / news-helicopter view, built on first use
+      reactor?.setEnabled(false);
+      if (!exterior) {
+        exterior = new ExteriorView();
+        const w = container.clientWidth || window.innerWidth;
+        const h = container.clientHeight || window.innerHeight;
+        exterior.resize(w / h, h * renderer.getPixelRatio());
+      }
     } else {
       if (!reactor) {
         reactor = new ReactorView(sim, canvas);
@@ -302,6 +320,11 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
       }
       phone.update(dt);
       const s = sim.state;
+      if (viewMode === 'outside' && exterior) {
+        if (s) layout.hist.sample(s);
+        exterior.update(dt, s);
+        return;
+      }
       if (viewMode !== 'control-room' && reactor) {
         // remote view: only the reactor scene animates; keep the trend recorders sampling
         if (s) layout.hist.sample(s);
@@ -309,6 +332,7 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
         return;
       }
       player.update(dt);
+      crew.update(dt, s, camera.position, player.pos);
       if (!s) return;
       kit.update(s, dt, time, true);
       ann.update(s, time, true);
@@ -322,8 +346,11 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
     render() {
       renderer.info.reset();
       if (bloomOn && composer) composer.render();
-      else if (viewMode !== 'control-room' && reactor) renderer.render(reactor.scene, reactor.camera);
-      else renderer.render(scene, camera);
+      else {
+        const r = remoteView();
+        if (r) renderer.render(r.scene, r.camera);
+        else renderer.render(scene, camera);
+      }
       const i = renderer.info.render;
       lastInfo = { calls: i.calls, triangles: i.triangles, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries, fps };
     },
@@ -385,6 +412,6 @@ export function createWorld(container: HTMLElement, sim: ReactorSimApi): WorldAp
       return true;
     },
   };
-  (api as any)._debug = { renderer, scene, camera, kit, player, ann, layout, room, phone, get reactor() { return reactor; } };
+  (api as any)._debug = { renderer, scene, camera, kit, player, ann, layout, room, phone, crew, get reactor() { return reactor; }, get exterior() { return exterior; } };
   return api;
 }

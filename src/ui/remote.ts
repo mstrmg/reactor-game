@@ -6,6 +6,7 @@
 import type { PlantState, ReactorSimApi, SimEvent } from '../sim/types';
 import { bus } from '../core/bus';
 import { voice, type Speaker } from '../audio/voice';
+import { Typer } from './typer';
 
 export type ViewMode = 'control-room' | 'reactor-cam' | 'tour';
 
@@ -32,49 +33,9 @@ export interface RemoteApi {
 
 const COLLEAGUE = 'Dale';
 const COLLEAGUE_TAG = 'Dale · reactor bridge';
-const CPS = 34; // characters per second
 
 const pick = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-
-/** Types text into an element, one character at a time, with voice blips. */
-class Typer {
-  text = '';
-  i = 0;
-  acc = 0;
-  done = true;
-  who: Speaker = 'dale';
-  private question = false;
-  constructor(public el: HTMLElement) {}
-  start(text: string, who: Speaker) {
-    this.text = text;
-    this.who = who;
-    this.i = 0;
-    this.acc = 0;
-    this.done = false;
-    this.question = /\?\s*$/.test(text);
-    this.el.textContent = '';
-  }
-  finish() {
-    this.i = this.text.length;
-    this.el.textContent = this.text;
-    this.done = true;
-  }
-  update(dt: number) {
-    if (this.done) return;
-    this.acc += dt * CPS;
-    const start = this.i;
-    while (this.acc >= 1 && this.i < this.text.length) {
-      const ch = this.text[this.i++];
-      this.acc -= 1;
-      if (ch === '.' || ch === '!' || ch === '?') this.acc -= 7;
-      else if (ch === ',' || ch === '—' || ch === ';' || ch === ':') this.acc -= 3;
-      if (this.who !== 'sys') voice.babble(ch, this.who, this.question && this.text.length - this.i < 12);
-    }
-    if (this.i !== start) this.el.textContent = this.text.slice(0, this.i);
-    if (this.i >= this.text.length) this.done = true;
-  }
-}
 
 // ---------------- what Dale sees ----------------
 type PlantMood = 'lost' | 'damage' | 'loca' | 'si' | 'tripped' | 'high' | 'low' | 'critical' | 'shutdown';

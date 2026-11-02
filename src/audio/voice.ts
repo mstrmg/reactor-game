@@ -5,7 +5,7 @@
  */
 import { audioPrefs } from './prefs';
 
-export type Speaker = 'you' | 'dale' | 'sys';
+export type Speaker = 'you' | 'dale' | 'sys' | 'marge' | 'theo' | 'priya' | 'hank' | 'lorraine';
 
 let ctx: AudioContext | null = null;
 let out: GainNode | null = null;
@@ -27,6 +27,11 @@ const VOICE: Record<Speaker, { base: number; type: OscillatorType; q: number; ga
   you: { base: 330, type: 'triangle', q: 4, gain: 0.22, spread: 5 },
   dale: { base: 175, type: 'square', q: 6, gain: 0.13, spread: 4 },
   sys: { base: 520, type: 'sine', q: 2, gain: 0.08, spread: 2 },
+  marge: { base: 240, type: 'sawtooth', q: 5, gain: 0.1, spread: 3 }, // shift supervisor: firm, mid
+  theo: { base: 205, type: 'triangle', q: 4, gain: 0.2, spread: 6 }, // reactor operator: eager, wide range
+  priya: { base: 300, type: 'square', q: 7, gain: 0.1, spread: 4 }, // BOP: crisp, quick
+  hank: { base: 140, type: 'sawtooth', q: 8, gain: 0.09, spread: 3 }, // field op over a radio: low, gravelly
+  lorraine: { base: 270, type: 'triangle', q: 3, gain: 0.18, spread: 5 }, // grid dispatcher: sing-song
 };
 
 function osc(type: OscillatorType, f: number, t: number, dur: number, dest: AudioNode) {
@@ -114,6 +119,52 @@ export const voice = {
   hangup() {
     this.click(0.9, 700, 0);
     this.click(0.6, 500, 0.07);
+  },
+  /** radio key-up squelch (field operator) */
+  radio() {
+    if (!ctx || !out) return;
+    const t = ctx.currentTime + 0.005;
+    const n = Math.floor(ctx.sampleRate * 0.18);
+    const b = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / ctx.sampleRate / 0.06) * 0.5;
+    const s = ctx.createBufferSource();
+    s.buffer = b;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1800;
+    bp.Q.value = 0.8;
+    const g = ctx.createGain();
+    g.gain.value = 0.35;
+    s.connect(bp).connect(g).connect(out);
+    s.start(t);
+    this.click(0.4, 1200, 0);
+  },
+  /** cash register-ish chime for money in, low thud for money out */
+  money(positive: boolean) {
+    if (!ctx || !out) return;
+    const t = ctx.currentTime + 0.01;
+    const notes = positive ? [880, 1320] : [220, 165];
+    notes.forEach((f, i) => {
+      const g = env(t + i * 0.09, 0.005, positive ? 0.08 : 0.12, 0.05, 0.25);
+      g.connect(out!);
+      osc(positive ? 'triangle' : 'square', f, t + i * 0.09, 0.35, g);
+    });
+  },
+  /** TV news "breaking" sting: brassy rising fifths over a low hit */
+  sting() {
+    if (!ctx || !out) return;
+    const t = ctx.currentTime + 0.02;
+    const hit = env(t, 0.004, 0.22, 0.05, 0.9);
+    hit.connect(out);
+    osc('sawtooth', 55, t, 1.1, hit);
+    [392, 523.25, 784, 1046.5].forEach((f, i) => {
+      const at = t + i * 0.13;
+      const g = env(at, 0.01, 0.06, i === 3 ? 0.5 : 0.08, i === 3 ? 0.9 : 0.18);
+      g.connect(out!);
+      osc('sawtooth', f, at, i === 3 ? 1.5 : 0.4, g);
+      osc('square', f * 1.005, at, i === 3 ? 1.5 : 0.4, g);
+    });
   },
   /** soft UI tick for buttons / advancing text */
   tick() {
