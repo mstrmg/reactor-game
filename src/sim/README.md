@@ -17,6 +17,8 @@ Every accident is the result of the physics. Nothing is scripted.
 | `faults.ts` | `FaultManager`: every `FaultId` acts on physics; random faults (first after 5–10 min, then every 10–25 min) |
 | `steam.ts`, `steamTables.ts` | IAPWS-IF97 saturation/liquid tables, `props(h,P)`, rigid-container equilibrium solver |
 | `bop.ts` | balance of plant: CW and condenser vacuum, condensate and MFP suction, FW heaters, turbine warm-up and vibration, generator excitation and synchroscope, house loads, CCW/SW, RCP bearings and seals, letdown HX, batch integrator |
+| `economy.ts` | `Economy` → `state.grid`: grid clock (shift starts 07:00), price curve, frequency, revenue and itemised costs, dispatcher requests |
+| `release.ts` | `Release` → `state.release`: fission-product transport (fuel → RCS → containment / secondary → environment), Gaussian-plume dose, emergency classification, evacuation radius |
 | `alarmHelp.ts` | `ALARM_HELP` fix guide for every annunciator |
 | `startupScript.ts` | `scriptedStartup()`: automated hot-standby → on-line sequence (tests) |
 | `plant.ts` | design constants. `scenarios.ts`: initial-condition specs. `describe.ts`: `describeTrip` and `describeFault` |
@@ -29,6 +31,42 @@ Every accident is the result of the physics. Nothing is scripted.
 - **CVCS/ECCS**: charging with level-program PI, letdown, VCT boron, dilute/borate batches, HPSI/LPSI head curves, accumulators (600 psig), and RWST at 2500 ppm.
 - **Containment**: steam + air + H₂ with wall heat sinks, fan coolers, sprays (HI-3), and hydrogen burns. Overpressure damages integrity.
 - **Catastrophes** (`state.catastrophe`): meltdown, steam explosion, vessel rupture, turbine missile, and containment failure. Each one is triggered by physical thresholds, never by a timer.
+
+## Grid and economics (`economy.ts`)
+- **Clock and price**: the shift starts at 07:00 (`grid.hourOfDay`). The price follows a daily curve: about $25/MWh at night, about $45 by day, and an evening peak of $80–150 at 17:00–20:00. Slow noise is added, and the price spikes briefly when a large unit trips.
+- **Frequency**: 60 Hz with small noise. If the unit trips at load, frequency sags by about 0.2 Hz × MW/1150 (≈59.8 Hz from full power) and recovers with τ ≈ 45 s.
+- **Revenue**: net MWe (gross minus house loads) × price, paid only while the breaker is closed. When the unit is off line, house loads are bought at the grid price.
+- **Running costs**: fuel is $2 per thermal MWh (≈$6 per electrical MWh) and fixed O&M is $15k/h. The ledger books these as hourly lines.
+- **One-off costs**, emergent from the plant:
+  - reactor trip $500k
+  - turbine trip at load $100k
+  - SI $2M
+  - PRT rupture $250k
+  - seized RCP $15M
+  - generator damage up to $60M
+  - fuel damage $2B × damage fraction
+  - each fault's repair
+  - catastrophes $0.6–15B
+- **Dispatcher**:
+  - It only makes requests while the unit is on line, and only after 5 min on line. Requests come every 15–40 min.
+  - Each request is a net-MWe target that is reachable at 5 %/min, given 10–30 min to meet, with ±20 MW tolerance. Increases are limited when rods are deep.
+  - A request is met after 2 min in band, which pays a bonus. A missed deadline costs 1.5× the bonus. A trip cancels the request.
+  - `hot-standby` also gets one "be synchronised by HH:MM" request.
+  - Events: `dispatch`, `money`, `message`.
+
+## Radiological release (`release.ts`)
+- **Inventory and fuel release**: the core holds about 3e8 Ci of noble gas, 7e8 Ci of iodine and 1.6e7 Ci of cesium. Release from the fuel tracks the fuel damage fraction (gap release) and the melt fraction (in-vessel release: noble gas 95 %, iodine 40 %, cesium 30 %).
+- **Paths out of the RCS**: activity moves with the coolant through the break, the PORV and safeties after the PRT disk ruptures, and RCP seal leakage, all into containment. A vessel failure goes directly to containment. A tube leak goes to the secondary. From the secondary, activity leaves through the ARVs and safeties, through the condenser air ejector vent (noble gas only), and through a steam-line break into containment.
+- **Containment to environment**: leakage is 0.1 %/day scaled with √pressure, plus a term that grows as containment integrity is lost. Inside containment, activity is removed by deposition and by sprays.
+- **Dose**: wind direction, speed and Pasquill stability class drift over time. A ground-level Gaussian plume (Briggs open-country σ) gives χ/Q at the site boundary (0.5 mi) and at 10 mi. Published doses are cumulative TEDE. Projected doses add 4 h at the current rate.
+- **Emergency class**:
+  - **Unusual event**: SI, loss of offsite power, or a leak above 10 gpm.
+  - **Alert**: fuel damage above 0.1 %, a leak above 50 gpm, CET above 700 °F, or a projected dose above 10 mrem.
+  - **Site area emergency**: fuel damage above 5 %, or fuel damage above 1 % with the RCS breached, or a projected dose above 100 mrem.
+  - **General emergency**: two barriers lost plus a potential loss of the third, or core melt with containment challenged, or a projected boundary dose above 1 rem, or a catastrophe.
+  - The class only escalates.
+  - Evacuation radius: 2 mi at SAE. At GE it is 5 mi, or 10 mi when containment has failed or the projected dose is high.
+- **After a catastrophe**: the sim keeps running, so the release keeps evolving after it.
 
 ## Units
 Internally the model uses MPa abs, °C, kg, kJ and kW. `PlantState` publishes psig, °F, %, gpm, MWe, and fractions of rated power, as documented in `types.ts`. Optional additional readouts are in `state.ext` (see `PlantExt`).
@@ -97,3 +135,8 @@ The **low-power** scenario is partly lined up: 2 CW pumps, vacuum on SJAE, 2 con
 - an out-of-phase breaker close damages and trips the generator
 - loss of CCW ends in an RCP bearing seizure and a reactor trip
 - the batch integrator stops a dilution by itself
+- an hour at full power: revenue ≈ ∫ price × net MW dt, and there is no release and no emergency class
+- a trip at load books ≥ $500k and sags frequency below 59.9 Hz, which then recovers
+- a dispatch request is issued and met by ramping the turbine
+- a station blackout with a small LOCA leads to a general emergency with off-site dose; after a containment failure the release escalates
+- an SGTR releases activity through the containment-bypass pathway

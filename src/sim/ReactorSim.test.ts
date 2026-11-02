@@ -230,3 +230,127 @@ describe('balance of plant', () => {
     }
   });
 });
+
+describe('grid economics', () => {
+  it('full power for an hour: revenue ≈ price × net MW × hours, no release, no emergency', () => {
+    const sim = new ReactorSim('full-power', 2);
+    sim.randomFaults = false;
+    let expected = 0;
+    advance(sim, 3605, (s) => {
+      const net = s.economy.netMW();
+      if (net > 0 && s.state.generatorBreakerClosed) expected += (net * s.state.grid!.pricePerMWh * 0.25) / 3600;
+    });
+    const g = sim.state.grid!;
+    expect(g.revenue).toBeGreaterThan(20_000);
+    expect(Math.abs(g.revenue - expected) / expected).toBeLessThan(0.02);
+    expect(g.costs).toBeGreaterThan(0);
+    expect(g.hourOfDay).toBeGreaterThan(7.9);
+    expect(g.ledger.some((e) => e.label.startsWith('Energy sales') && e.amount > 0)).toBe(true);
+    expect(g.frequencyHz).toBeGreaterThan(59.9);
+    expect(g.frequencyHz).toBeLessThan(60.1);
+    const r = sim.state.release!;
+    expect(r.emergencyClass).toBe('none');
+    expect(r.evacuationRadiusMi).toBe(0);
+    expect(r.nobleGasCi + r.iodineCi + r.cesiumCi).toBeLessThan(1e-3);
+    expect(r.siteBoundaryDoseRem).toBeLessThan(1e-6);
+  }, 120_000);
+
+  it('a reactor trip at load costs money and sags grid frequency, which then recovers', () => {
+    const sim = new ReactorSim('full-power', 1);
+    sim.randomFaults = false;
+    advance(sim, 120);
+    const cash0 = sim.state.grid!.cash;
+    const money: number[] = [];
+    sim.drainEvents();
+    sim.press('REACTOR_TRIP');
+    let fMin = 60;
+    advance(sim, 30, (s) => { fMin = Math.min(fMin, s.state.grid!.frequencyHz); });
+    for (const e of sim.drainEvents()) if (e.type === 'money') money.push(e.amount);
+    expect(fMin).toBeLessThan(59.9);
+    expect(money.some((a) => a <= -500_000)).toBe(true);
+    expect(sim.state.grid!.ledger.some((e) => e.amount <= -500_000 && /trip/i.test(e.label))).toBe(true);
+    expect(sim.state.grid!.cash).toBeLessThan(cash0 - 500_000);
+    advance(sim, 300);
+    expect(sim.state.grid!.frequencyHz).toBeGreaterThan(59.95);
+  }, 60_000);
+
+  it('the dispatcher issues a load request and it is met when the operator ramps to it', () => {
+    const sim = new ReactorSim('full-power', 3);
+    sim.randomFaults = false;
+    advance(sim, 4000, (s) => !!s.state.grid!.dispatch);
+    const r = sim.state.grid!.dispatch!;
+    expect(r).toBeTruthy();
+    expect(r.status).toBe('pending');
+    expect(r.deadline - r.issuedAt).toBeGreaterThanOrEqual(600);
+    expect(r.deadline - r.issuedAt).toBeLessThanOrEqual(1800);
+    expect(r.reason.length).toBeGreaterThan(10);
+    // operator: dial the target into the turbine load set, then trim on net MWe
+    sim.controls.turbineRampRateMWpm = 50;
+    sim.controls.turbineLoadSetpointMW = r.targetMW + sim.bop.houseMW;
+    const cash0 = sim.state.grid!.cash;
+    advance(sim, r.deadline - sim.t + 10, (s) => {
+      if (!s.state.grid!.dispatch) return true;
+      if (Math.abs(s.state.turbineLoadMW - s.controls.turbineLoadSetpointMW) < 1) s.controls.turbineLoadSetpointMW += 0.02 * (r.targetMW - s.economy.netMW());
+    });
+    const done = sim.state.grid!.dispatchHistory[0];
+    expect(done.id).toBe(r.id);
+    expect(done.status).toBe('met');
+    expect(sim.state.reactorTripped).toBe(false);
+    expect(sim.state.grid!.ledger.some((e) => e.label.startsWith(`Dispatch #${r.id} met`) && e.amount === r.bonus)).toBe(true);
+    expect(sim.state.grid!.cash).toBeGreaterThan(cash0);
+  }, 120_000);
+});
+
+describe('radiological release', () => {
+  it('station blackout with a small LOCA melts the core: general emergency, dose off site, release keeps evolving', () => {
+    const sim = new ReactorSim('full-power', 3);
+    sim.randomFaults = false;
+    (sim as unknown as { dgReady: () => boolean }).dgReady = () => false;
+    sim.injectFault('LOSS_OF_OFFSITE_POWER');
+    (sim as unknown as { offsiteRestoreAt: number }).offsiteRestoreAt = -1;
+    sim.injectFault('SMALL_LOCA', 1);
+    sim.faults.locaArea = 0.005;
+    const classes: string[] = [];
+    advance(sim, 3600, (s) => {
+      for (const e of s.drainEvents()) if (e.type === 'emergency-class') classes.push(e.level);
+      return s.state.release!.emergencyClass === 'general-emergency';
+    });
+    const r1 = { ...sim.state.release! };
+    expect(r1.emergencyClass).toBe('general-emergency');
+    expect(classes).toContain('general-emergency');
+    expect(r1.evacuationRadiusMi).toBeGreaterThanOrEqual(5);
+    expect(sim.state.fuelDamage).toBeGreaterThan(0.05);
+    expect(r1.containmentCi).toBeGreaterThan(1e5);
+    advance(sim, 600);
+    const r2 = { ...sim.state.release! };
+    expect(r2.siteBoundaryDoseRem).toBeGreaterThan(0);
+    expect(r2.siteBoundaryDoseRem).toBeGreaterThan(r1.siteBoundaryDoseRem);
+    expect(r2.tenMileDoseRem).toBeGreaterThan(0);
+    expect(r2.nobleGasCi).toBeGreaterThan(r1.nobleGasCi);
+    expect(Number.isFinite(sim.state.rcsPressure)).toBe(true);
+    // the containment then fails: the sim keeps running and the release escalates
+    sim.integrity.containment = 0;
+    sim.setCatastrophe('containment-failure', 'test');
+    advance(sim, 300);
+    const r3 = sim.state.release!;
+    expect(r3.pathway).toBe('containment-failure');
+    expect(r3.rateCiPerS).toBeGreaterThan(r2.rateCiPerS * 10);
+    expect(r3.nobleGasCi).toBeGreaterThan(r2.nobleGasCi);
+    expect(r3.evacuationRadiusMi).toBe(10);
+    expect(Number.isFinite(r3.siteBoundaryDoseRem)).toBe(true);
+  }, 180_000);
+
+  it('a steam generator tube rupture releases activity by bypassing containment', () => {
+    const sim = new ReactorSim('full-power', 1);
+    sim.randomFaults = false;
+    sim.injectFault('SG_TUBE_LEAK', 1);
+    sim.faults.tubeLeakArea = 3.5e-4;
+    const seen = new Set<string>();
+    advance(sim, 1800, (s) => { seen.add(s.state.release!.pathway); });
+    const r = sim.state.release!;
+    expect(seen.has('sg-tube-steam') || seen.has('vent')).toBe(true);
+    expect(r.nobleGasCi).toBeGreaterThan(0.01);
+    expect(r.siteBoundaryDoseRem).toBeGreaterThan(0);
+    expect(['unusual-event', 'alert', 'site-area-emergency', 'general-emergency']).toContain(r.emergencyClass);
+  }, 120_000);
+});

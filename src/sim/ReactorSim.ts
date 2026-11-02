@@ -21,6 +21,8 @@ import { SCENARIOS, type ScenarioSpec } from './scenarios';
 import { evaluateRps, type RpsMemory, newRpsMemory } from './rps';
 import { AlarmManager } from './alarms';
 import { Bop, defaultBopControls, type Lineup } from './bop';
+import { Economy } from './economy';
+import { Release } from './release';
 import { FaultManager } from './faults';
 import { Rng } from './rng';
 
@@ -184,6 +186,8 @@ export class ReactorSim implements ReactorSimApi {
   alarms = new AlarmManager();
   faults: FaultManager;
   bop: Bop = new Bop(this);
+  economy: Economy = new Economy(this);
+  release: Release = new Release(this);
 
   // instruments
   srCps = 0;
@@ -448,6 +452,8 @@ export class ReactorSim implements ReactorSimApi {
 
     // ---- settle with fission power held
     this.settle(spec);
+    this.economy.reset();
+    this.release.reset();
     this.publish();
     this.alarms.update(this, true);
     this.events = [];
@@ -644,6 +650,8 @@ export class ReactorSim implements ReactorSimApi {
     this.containment(dt);
     if (!this.settling) {
       this.damage(dt);
+      this.economy.step(dt);
+      this.release.step(dt);
       this.score.mwhGenerated += (this.turb.mwe * dt) / 3600;
       if (this.kin.n > 0.05) this.score.timeAtPowerS += dt;
       this.trackHistory();
@@ -1431,12 +1439,17 @@ export class ReactorSim implements ReactorSimApi {
     hbar = this.hbarV();
     const sl = HL(K.SURGE_LOOP);
     const out = this.pzrOut;
+    // outsurge draws liquid first; once the liquid is exhausted the rest leaves as steam
+    const mLiq = Math.max(0, pz.liquidV) / vf(P);
+    const hfP = hf(P), hDry = this.pzrDryH(P), hIn = this.insurgeH(P);
+    const surgeE = (dm: number) => {
+      if (dm >= 0) return dm * hIn;
+      const liq = Math.min(-dm, mLiq);
+      return -(liq * hfP + (-dm - liq) * hDry);
+    };
     const f = (dm: number) => {
       const Mp = pz.M + dm;
-      let hs: number;
-      if (dm >= 0) hs = this.insurgeH(P);
-      else hs = pz.liquidV > 0.05 ? hf(P) : this.pzrDryH(P);
-      const Pp = containerPressure(Mp, pz.U + dm * hs, V_PZR, P, out);
+      const Pp = containerPressure(Mp, pz.U + surgeE(dm), V_PZR, P, out);
       const ml = this.ML - dm;
       let vol = 0;
       for (let i = 0; i < NN; i++) vol += VFRAC[i] * props(this.h[i], Pp).v;
@@ -1457,8 +1470,10 @@ export class ReactorSim implements ReactorSimApi {
       fb = f(b);
       if (b === lim && fa * fb > 0) break;
     }
-    let dmSol = b;
+    // no bracket (pathological states): skip the surge this step rather than dumping the pressurizer
+    let dmSol = 0;
     if (fa * fb <= 0) {
+      dmSol = b;
       let side = 0;
       for (let it = 0; it < 40; it++) {
         dmSol = (a * fb - b * fa) / (fb - fa);
@@ -1470,13 +1485,14 @@ export class ReactorSim implements ReactorSimApi {
     }
     // apply
     const dm = dmSol;
-    const hs = dm >= 0 ? this.insurgeH(P) : pz.liquidV > 0.05 ? hf(P) : this.pzrDryH(P);
+    const eS = surgeE(dm);
+    const hs = dm !== 0 ? eS / dm : hIn;
     // insurge: the pressurizer stratifies, so subcooled insurge water does not immediately quench the
     // steam space (insurgeH heats it partway toward saturation). The loops are debited dm·hs below, so
     // energy is conserved.
     if (dm >= 0) pz.B += (dm * (this.bor[sl] - pz.B)) / Math.max(1, pz.M + dm);
     else this.bor[sl] += (-dm * (pz.B - this.bor[sl])) / (this.ML * VFRAC[sl]);
-    pz.M += dm; pz.U += dm * hs;
+    pz.M += dm; pz.U += eS;
     // loops: remove/add at surge enthalpy with the uniform-distribution energy correction
     this.energyCorrection(sl, -dm * (hs - hbar), hs, hbar);
     this.ML -= dm;
@@ -1937,6 +1953,9 @@ export class ReactorSim implements ReactorSimApi {
     s.score = { ...this.score };
     // extras (additive contract)
     s.bop = this.bop.publish();
+    const g = this.economy.grid;
+    s.grid = { ...g, ledger: g.ledger.map((x) => ({ ...x })), dispatch: g.dispatch ? { ...g.dispatch } : null, dispatchHistory: g.dispatchHistory.map((x) => ({ ...x })) };
+    s.release = this.release.publish();
     s.ext = {
       tavgProgramDeviation: s.tAvg - s.tRef,
       steamDumpsAvailable: this.bop.condenserAvailable(),
