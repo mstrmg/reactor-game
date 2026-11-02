@@ -940,7 +940,7 @@ export function createCrew(root: HTMLElement, sim: ReactorSimApi, hooks: CrewHoo
       head = `<div class="orders__h">Crew orders</div><div class="orders__sub">Who?</div>`;
       rows = ORDER.map((m, i) => {
         const r = running.get(m);
-        return `<button class="orders__row" data-i="${i}"><kbd>${i + 1}</kbd><span class="orders__l"><b>${CREW[m].name}</b> · ${esc(CREW[m].role)}</span><span class="orders__n">${r ? `busy: ${esc(r.job.label)}` : m === 'FIELD' ? 'radio' : ''}</span></button>`;
+        return `<button class="orders__row" data-i="${i}"><kbd>${i + 1}</kbd><span class="orders__l"><b>${CREW[m].name}</b> · ${esc(CREW[m].role)}</span><span class="orders__n">${r ? `busy: ${esc(r.job.label)}` : ''}</span></button>`;
       }).join('');
     } else {
       items = mSub ? mSub.items : itemsFor(mMember);
